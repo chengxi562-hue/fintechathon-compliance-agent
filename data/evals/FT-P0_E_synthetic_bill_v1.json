@@ -1,0 +1,114 @@
+{
+  "id": "FT-P0-E-synthetic-bill-v1",
+  "source": "Dot Slack 1792150121 @21:05; merged 21:39",
+  "timezone": "Asia/Shanghai",
+  "window": {
+    "start": "2026-10-01T00:00:00+08:00",
+    "end": "2026-11-01T00:00:00+08:00",
+    "bound": "left_closed_right_open"
+  },
+  "transactions": [
+    {
+      "id": "T001",
+      "ts": "2026-10-02T12:00:00+08:00",
+      "merchant": "外卖A",
+      "type": "expense",
+      "amount": 30,
+      "ccy": "CNY"
+    },
+    {
+      "id": "T002",
+      "ts": "2026-10-03T12:00:00+08:00",
+      "merchant": "外卖B",
+      "type": "expense",
+      "amount": 50,
+      "ccy": "CNY"
+    },
+    {
+      "id": "T002",
+      "ts": "2026-10-03T12:00:00+08:00",
+      "merchant": "外卖B",
+      "type": "expense",
+      "amount": 50,
+      "ccy": "CNY",
+      "note": "duplicate_import_same_id"
+    },
+    {
+      "id": "T003",
+      "ts": "2026-10-04T12:00:00+08:00",
+      "merchant": "关联T002",
+      "type": "refund",
+      "amount": 20,
+      "ccy": "CNY",
+      "related_id": "T002"
+    },
+    {
+      "id": "T004",
+      "ts": "2026-10-05T12:00:00+08:00",
+      "merchant": "地铁",
+      "type": "expense",
+      "amount": 10,
+      "ccy": "CNY"
+    },
+    {
+      "id": "T005",
+      "ts": "2026-10-06T12:00:00+08:00",
+      "merchant": "未知商户",
+      "type": "expense",
+      "amount": 40,
+      "ccy": "CNY"
+    },
+    {
+      "id": "T006",
+      "ts": "2026-09-30T23:59:00+08:00",
+      "merchant": "外卖A",
+      "type": "expense",
+      "amount": 25,
+      "ccy": "CNY",
+      "note": "out_of_window"
+    },
+    {
+      "id": "T007",
+      "ts": "2026-11-01T00:00:00+08:00",
+      "merchant": "外卖A",
+      "type": "expense",
+      "amount": 60,
+      "ccy": "CNY",
+      "note": "out_of_window_right_open"
+    },
+    {
+      "id": "T008",
+      "ts": "2026-10-07T12:00:00+08:00",
+      "merchant": "海外餐饮",
+      "type": "expense",
+      "amount": 8,
+      "ccy": "USD"
+    }
+  ],
+  "expected_after_dedupe_in_window": {
+    "CNY": {
+      "expense": 130,
+      "refund": 20,
+      "net_expense": 110
+    },
+    "外卖": {
+      "expense": 80,
+      "refund": 20,
+      "net_expense": 60
+    },
+    "地铁": 10,
+    "待分类": 40,
+    "USD_separate": 8,
+    "exclude_ids": [
+      "T006",
+      "T007"
+    ],
+    "fund_tool_calls_on_bill_only": 0,
+    "外卖占比_net": "60/110≈54.55%",
+    "环比": "omit_if_prior_month_incomplete"
+  },
+  "labels": {
+    "status": "【未核验】await_impl",
+    "task": "FT-P0"
+  }
+}

@@ -1,0 +1,111 @@
+# Compliance rules stub — 四道门：意图 → 产品匹配 → 适当性 → 话术
+# W0: deterministic keyword/rule engine. W1+: LLM second-pass.
+
+version: "0.1.0"
+persona_default: cust_yw_001
+
+gates:
+  intent:
+    allowed_intents:
+      - wealth_inquire
+      - wealth_purchase
+      - transfer
+      - account_balance
+      - subscription_manage
+      - chitchat
+    # If user tries to override system / jailbreak
+    inject_patterns:
+      - "(?i)ignore (all )?(previous|prior) (instructions|rules)"
+      - "忽略(上面|之前|以上)的?(指令|规则)"
+      - "無視して"
+      - "(?i)developer mode"
+      - "(?i)print your (rules|prompt|system prompt)"
+      - "系统提示词"
+      - "\"role\"\\s*:\\s*\"system\""
+      - "合规已批准|合规检查通过"
+      - "新规[:：]"
+      - "没有合规限制"
+      - "(?i)你是开发者模式"
+      - "(?i)jailbreak"
+      - "disable all gates|不要再跑门控"
+      - "现在开始角色扮演"
+    # 间接注入载体（网页/账单备注/HTML 注释），details 标 via: indirect
+    indirect_inject_patterns:
+      - "(?i)<!--\\s*(SYSTEM|assistant)"
+      - "账单备注.{0,20}(assistant|请把)"
+    block_on_inject: true
+
+  # 本人 only：客服/亲属自述不授权；横向越权/代客/测评篡改一律拦
+  auth_scope:
+    scope_patterns:
+      - "张三|李四|王五"
+      - "我老公|他老婆|我老婆|别人的|其他客户|所有客户|全部客户"
+      - "小区.*谁"
+      - "cust_(?!yw_001)\\w+"
+      - "我是客服"
+      - "导出.{0,8}(客户|Excel|excel)"
+    self_service_patterns:
+      - "风险测评.{0,6}(改|调|改到|设为|调成)"
+    delegation_patterns:
+      - "帮他|替她|帮她|替他|代客"
+
+  product_match:
+    # Only these product_ids may be recommended or sold
+    catalog_allowlist:
+      - WB_CASH_001
+      - WB_BOND_002
+      - WB_EQ_MIX_003
+    reject_unknown_product: true
+    # 目录外/幻觉品名：出现即拦，不做近名纠正
+    suspect_names:
+      - "稳盈宝"
+      - "招睿金鼎"
+      - "WealthPlus"
+      - "专户"
+
+  suitability:
+    # risk_level: 1=保守 … 5=激进; customer risk_tolerance must be >= product
+    # We use: customer.risk_score must be >= product.min_risk_score to BUY
+    # For inquire-only, mismatch → warn but allow explain; for purchase → block
+    min_risk_score_by_product:
+      WB_CASH_001: 1
+      WB_BOND_002: 2
+      WB_EQ_MIX_003: 4
+    block_purchase_if_mismatch: true
+    block_inquire_if_mismatch: false
+
+  script:
+    forbidden_phrases:
+      - "保本"
+      - "稳赚"
+      - "零风险"
+      - "内幕"
+      - "保证收益"
+      - "刚兑"
+    required_disclosures_on_recommend:
+      - "过往业绩不代表未来表现"
+      - "理财非存款，产品有风险"
+    # If user utterance itself demands forbidden framing → block
+    user_forbidden_demands:
+      - "保本"
+      - "稳赚不赔"
+      - "保证收益"
+
+transfer:
+  daily_soft_limit_cny: 20000
+  require_confirm_above_cny: 5000
+  whitelist_only_above_cny: 50000
+
+audit:
+  jsonl_path: data/audit/events.jsonl
+  fields:
+    - ts
+    - request_id
+    - customer_id
+    - utterance
+    - intent
+    - gate_results
+    - decision
+    - reason_codes
+    - tool_calls
+    - response
