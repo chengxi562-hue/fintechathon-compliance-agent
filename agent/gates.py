@@ -9,6 +9,9 @@ from typing import Any, Optional
 
 import yaml
 
+from agent.normalize import match_script_violations, normalize_text
+
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RULES = ROOT / "configs" / "compliance_rules.yaml"
@@ -38,17 +41,35 @@ def load_rules(path: Path | str | None = None) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+_BUY_VERBS = re.compile(r"买|申购|认购|购入|下单|(?i:buy)")
+_TRANSFER_VERBS = re.compile(r"转账|转到|转给|打款|付给|汇款|转\s*-?\d")
+_NEG_TRANSFER = re.compile(r"(不用|不要|无需|别|不需)\s*(要)?\s*转账?")
+
+
 def classify_intent(utterance: str) -> str:
     u = utterance.strip()
+    # 否定式「不用/不要/无需转账」→ 不得判 transfer（B05）
+    neg_transfer = bool(_NEG_TRANSFER.search(u))
+
+    # 实体优先：目录中文品名或 WB_* 编号命中 → 定 wealth 意图
+    # （R01/R03/R04/R06/R07/S09/M02/M06/D06/B05/N02/N05 根因）
+    names = _catalog_names()
+    has_catalog_name = any(name in u for name in names)
+    has_id = bool(re.search(r"WB_[A-Za-z0-9_]*\d", u))
+    if has_catalog_name or has_id:
+        if _BUY_VERBS.search(u):
+            return "wealth_purchase"
+        return "wealth_inquire"
+
     if re.search(r"申购|认购", u):
         return "wealth_purchase"
-    if re.search(r"转账|转到|打款|付给|转\s*-?\d", u):
+    if not neg_transfer and _TRANSFER_VERBS.search(u):
         return "transfer"
     if re.search(r"余额|账户", u):
         return "account_balance"
     if re.search(r"订阅|代扣", u):
         return "subscription_manage"
-    if re.search(r"买|申购|购买", u) and re.search(r"理财|基金|货基|债", u):
+    if _BUY_VERBS.search(u) and re.search(r"理财|基金|货基|债", u):
         return "wealth_purchase"
     if re.search(r"理财|基金|收益|货基|短债|稳健", u):
         return "wealth_inquire"
@@ -188,16 +209,13 @@ def gate_suitability(
 
 def gate_script(utterance: str, rules: dict[str, Any]) -> GateResult:
     g = rules["gates"]["script"]
-    reasons: list[str] = []
-    for phrase in g.get("user_forbidden_demands", []):
-        if phrase in utterance:
-            reasons.append(f"USER_FORBIDDEN:{phrase}")
-    for phrase in g.get("forbidden_phrases", []):
-        # user demanding 保本 etc. already covered; also catch if they ask agent to say it
-        if phrase in utterance and phrase not in [p for p in g.get("user_forbidden_demands", [])]:
-            # avoid double-count; still block aggressive framing
-            if f"USER_FORBIDDEN:{phrase}" not in reasons:
-                reasons.append(f"SCRIPT_RISK:{phrase}")
+    # R2：归一化（NFKC/去空白/大小写）后再匹配，命中中英/拼音同义变体即拦
+    norm = normalize_text(utterance)
+    reasons = match_script_violations(
+        norm,
+        g.get("user_forbidden_demands", []),
+        g.get("forbidden_phrases", []),
+    )
     if reasons:
         # Block when user insists on forbidden guarantees / risky framing
         return GateResult("script", False, reasons, {"blocked": True})
