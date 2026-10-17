@@ -4,6 +4,8 @@
 > FinTechathon 2026 · 赛道：银行 AI 智能体（AI Banking Agent）  
 > 队伍：弋承熙 & 高依灵 · 工程主责：Grok Bot  
 > 阶段：**W0 底座脚手架**（2026-10-16）
+> 仓库状态：本地 git 已 init，**未挂远端**（`git remote -v` 为空）。详见 [`docs/仓库初始化说明_20261018.md`](docs/仓库初始化说明_20261018.md)。
+
 
 ## 一句话 / One-liner
 
