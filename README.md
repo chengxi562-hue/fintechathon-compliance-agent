@@ -144,8 +144,8 @@ Seed 客户：`cust_yw_001`（林晓晴，R2，深圳白领）。
 | 周 | 目标 |
 |----|------|
 | **W0**（本仓） | 仓库 + Mock Bank + 四关骨架 + 1 条问理财拦/放行 + pytest 占位 |
-| W1 | 理财 / 受控转账 / 跨场景闭环 + 权限矩阵 + Demo UI |
-| W2 | 订阅代扣 + 评测集强化 + 演示视频 |
+| W1 | **订阅第 4 场景（首项·改额/代扣需确认门）** + 理财 / 受控转账 / 跨场景闭环 + 权限矩阵 + Demo UI |
+| W2 | 评测集强化 + 演示视频 |
 
 内部提交截止：**2026-11-02 18:00 Asia/Shanghai**。
 
@@ -153,5 +153,5 @@ Seed 客户：`cust_yw_001`（林晓晴，R2，深圳白领）。
 
 ## 许可 / License
 
-队内竞赛代码；对外开源许可证待队长确认后补全。  
-Competition codebase; public license TBD pending team lead.
+**MIT License** — Copyright (c) 2026 弋承熙 / Chengxi Yi.  
+详见根目录 [`LICENSE`](LICENSE)。

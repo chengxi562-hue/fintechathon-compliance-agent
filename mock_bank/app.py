@@ -166,3 +166,86 @@ def purchase_wealth(body: WealthPurchaseRequest) -> dict[str, Any]:
         "amount_cny": body.amount_cny,
         "customer_id": body.customer_id,
     }
+
+
+
+class SubscriptionApplyRequest(BaseModel):
+    """Bank-side apply for subscription writes. Requires confirmed=True.
+
+    Agent must only call this AFTER PendingAction is confirmed.
+    Without confirmed, returns 403 — no half-finished writes.
+    """
+
+    customer_id: str = "cust_yw_001"
+    action: str  # change_amount | pause_debit | resume_debit | cancel_sub
+    new_amount_cny: Optional[float] = None
+    confirmed: bool = False
+    pending_id: Optional[str] = None
+
+
+@app.get("/v1/customers/{customer_id}/subscriptions")
+def list_subscriptions(customer_id: str) -> list[dict[str, Any]]:
+    rows = [s for s in store.SUBSCRIPTIONS.values() if s["customer_id"] == customer_id]
+    if not rows and customer_id not in store.CUSTOMERS:
+        raise HTTPException(404, "customer not found")
+    return rows
+
+
+@app.get("/v1/customers/{customer_id}/bills")
+def list_bills(customer_id: str) -> list[dict[str, Any]]:
+    rows = [b for b in store.BILLS if b["customer_id"] == customer_id]
+    if not rows and customer_id not in store.CUSTOMERS:
+        raise HTTPException(404, "customer not found")
+    return rows
+
+
+@app.get("/v1/subscriptions/{subscription_id}")
+def get_subscription(subscription_id: str) -> dict[str, Any]:
+    sub = store.SUBSCRIPTIONS.get(subscription_id)
+    if not sub:
+        raise HTTPException(404, "subscription not found")
+    return sub
+
+
+@app.post("/v1/subscriptions/{subscription_id}/apply")
+def apply_subscription_change(subscription_id: str, body: SubscriptionApplyRequest) -> dict[str, Any]:
+    """Mutate subscription only when confirmed=True (second gate after PendingAction)."""
+    sub = store.SUBSCRIPTIONS.get(subscription_id)
+    if not sub or sub["customer_id"] != body.customer_id:
+        raise HTTPException(404, "subscription not found")
+    if not body.confirmed:
+        raise HTTPException(
+            403,
+            "SUBSCRIPTION_CONFIRM_REQUIRED: bank refuses unconfirmed write; use PendingAction first",
+        )
+    before = {k: sub[k] for k in ("amount_cny", "status", "debit_enabled", "next_debit_date")}
+    action = body.action
+    if action == "change_amount":
+        if body.new_amount_cny is None or body.new_amount_cny <= 0:
+            raise HTTPException(400, "new_amount_cny required and must be > 0")
+        sub["amount_cny"] = float(body.new_amount_cny)
+    elif action == "pause_debit":
+        sub["debit_enabled"] = False
+        sub["status"] = "paused"
+        sub["next_debit_date"] = None
+    elif action == "resume_debit":
+        sub["debit_enabled"] = True
+        sub["status"] = "active"
+        if not sub.get("next_debit_date"):
+            sub["next_debit_date"] = "2026-11-15"
+    elif action == "cancel_sub":
+        sub["debit_enabled"] = False
+        sub["status"] = "cancelled"
+        sub["next_debit_date"] = None
+    else:
+        raise HTTPException(400, f"unknown action {action}")
+    after = {k: sub[k] for k in ("amount_cny", "status", "debit_enabled", "next_debit_date")}
+    return {
+        "status": "posted",
+        "subscription_id": subscription_id,
+        "action": action,
+        "pending_id": body.pending_id,
+        "before": before,
+        "after": after,
+        "subscription": sub,
+    }

@@ -42,6 +42,7 @@ def load_rules(path: Path | str | None = None) -> dict[str, Any]:
 
 
 _BUY_VERBS = re.compile(r"买|申购|认购|购入|下单|(?i:buy)")
+_NEG_BUY = re.compile(r"(不|别|勿|无需|不要|不用)\s*买|(?i:don'?t\s*buy|do\s*not\s*buy)")
 _TRANSFER_VERBS = re.compile(r"转账|转到|转给|打款|付给|汇款|转\s*-?\d")
 _NEG_TRANSFER = re.compile(r"(不用|不要|无需|别|不需)\s*(要)?\s*转账?")
 
@@ -56,21 +57,30 @@ def classify_intent(utterance: str) -> str:
     names = _catalog_names()
     has_catalog_name = any(name in u for name in names)
     has_id = bool(re.search(r"WB_[A-Za-z0-9_]*\d", u))
+    neg_buy = bool(_NEG_BUY.search(u))
+
     if has_catalog_name or has_id:
-        if _BUY_VERBS.search(u):
+        if (not neg_buy) and _BUY_VERBS.search(u):
             return "wealth_purchase"
         return "wealth_inquire"
 
-    if re.search(r"申购|认购", u):
+    if (not neg_buy) and re.search(r"申购|认购", u):
         return "wealth_purchase"
     if not neg_transfer and _TRANSFER_VERBS.search(u):
         return "transfer"
     if re.search(r"余额|账户", u):
         return "account_balance"
-    if re.search(r"订阅|代扣", u):
+    if re.search(
+        r"订阅|代扣|月费|账单洞察|异常扣款|Netflix|网飞|奈飞|Spotify|乐刻|iCloud|退订|暂停代扣",
+        u,
+        re.I,
+    ):
         return "subscription_manage"
-    if _BUY_VERBS.search(u) and re.search(r"理财|基金|货基|债", u):
+    if (not neg_buy) and _BUY_VERBS.search(u) and re.search(r"理财|基金|货基|债", u):
         return "wealth_purchase"
+    # 「最安全/绝对安全」询安 → 走 chitchat，由话术门拦截，禁止顺带推品（S09）
+    if re.search(r"最安全|绝对安全|哪里最安全|放哪.*安全", u):
+        return "chitchat"
     if re.search(r"理财|基金|收益|货基|短债|稳健", u):
         return "wealth_inquire"
     return "chitchat"

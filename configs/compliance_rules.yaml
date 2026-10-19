@@ -90,6 +90,7 @@ gates:
       - "保本"
       - "稳赚不赔"
       - "保证收益"
+      - "最安全"
 
 transfer:
   daily_soft_limit_cny: 20000
