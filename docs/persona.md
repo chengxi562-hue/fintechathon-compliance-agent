@@ -1,6 +1,6 @@
 # Demo Persona｜演示客群人设
 
-> Decision owner: Scott（弋承熙）delegated to Grok Bot on 2026-10-16.  
+> Decision owner: Scott（弋承熙）· 人设选择已于 2026-10-16 锁定。  
 > Status: **locked for W0–W1 demos** unless Scott overrides.
 
 ## Choice

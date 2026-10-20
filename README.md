@@ -2,7 +2,7 @@
 # Compliance-First Bank AI Sales Agent (“Compliance Officer”)
 
 > FinTechathon 2026 · 赛道：银行 AI 智能体（AI Banking Agent）  
-> 队伍：弋承熙 & 高依灵 · 工程主责：Grok Bot  
+> 队伍：弋承熙 & 高依灵（作品主体：队伍独立完成，AI 工具辅助编程）  
 > 阶段：**W1/W2 完成**（2026-10-20）：四场景 + Demo Web + 注入/编码防御加固
 > 所有客户数据均为合成 Mock，不含真实个人信息或密钥。
 
