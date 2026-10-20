@@ -28,7 +28,7 @@ Demo persona (locked): **young white-collar with investable assets** (not studen
 | 评测集 v0 草案（70 条 + 指标口径 §4） | [`docs/评测集_v0_草案_20261018.md`](docs/评测集_v0_草案_20261018.md) | ✅ 机器核对 P36/F34 |
 | Demo 分镜一页纸 | [`docs/Demo分镜_一页纸_20261018.md`](docs/Demo分镜_一页纸_20261018.md) | ✅ |
 | W0 问题清单执行卡 | [`docs/W0问题清单执行卡_20261018.md`](docs/W0问题清单执行卡_20261018.md) | ✅ |
-| 平台提交核对清单 | [`docs/平台提交核对清单_20261018.md`](docs/平台提交核对清单_20261018.md) | 🟡 apply.g-ican.com 字段【需 Scott 登录】 |
+| 平台提交核对清单 | [`docs/平台提交核对清单_20261020.md`](docs/平台提交核对清单_20261020.md) | 🟡 apply.g-ican.com 字段【需 Scott 登录】 |
 | 指标定义 v1（8 指标独立成文） | [`docs/指标定义_v1_20261018.md`](docs/指标定义_v1_20261018.md) | 🟡【待依灵确认】 |
 
 
