@@ -8,6 +8,7 @@ Swap `run_agent` internals for a compiled StateGraph without changing call sites
 
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -85,6 +86,7 @@ def _plan_for_intent(intent: str) -> list[str]:
 # 127.0.0.1:8000 Mock Bank into HTTP 502 and makes every confirmed write look
 # like a bank rejection. Never let a proxy carry loopback traffic.
 _HTTP_TIMEOUT = 3.0
+_DEFAULT_BANK_URL = "http://127.0.0.1:8000"
 
 
 def _local_http_get(url: str) -> "httpx.Response":
@@ -596,14 +598,28 @@ def _bill_insight_turn(
 
 
 
+def _default_bank_url() -> str:
+    """Resolve the Mock Bank base URL once, at call time.
+
+    ``.env.example`` has advertised ``MOCK_BANK_URL`` since W0, but the value was
+    never actually read — every caller silently used the hard-coded default. That
+    also made the test suite depend on a coincidence: if a Mock Bank happened to be
+    listening on 127.0.0.1:8000, the confirmation tests took the HTTP branch, wrote
+    to *that* process, and then asserted against local seed memory (2 failures).
+    Reading the env var makes the URL configurable and lets tests pin an unused port.
+    """
+    return os.environ.get("MOCK_BANK_URL") or _DEFAULT_BANK_URL
+
+
 def run_agent(
     utterance: str,
     customer_id: str = "cust_yw_001",
-    mock_bank_url: str = "http://127.0.0.1:8000",
+    mock_bank_url: str | None = None,
     audit: AuditLogger | None = None,
     session_id: str | None = None,
 ) -> AgentState:
     """Execute one turn. Demo path: 问理财 → 拦 / 放行；W1 含订阅确认门."""
+    mock_bank_url = mock_bank_url or _default_bank_url()
     audit = audit or AuditLogger()
     rules = load_rules()
     sid = session_id or f"sess_{uuid.uuid4().hex[:10]}"

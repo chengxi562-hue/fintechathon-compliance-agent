@@ -3,7 +3,7 @@
 
 > FinTechathon 2026 · 赛道：银行 AI 智能体（AI Banking Agent）  
 > 队伍：弋承熙 & 高依灵 · 工程主责：Grok Bot  
-> 阶段：**W1**（2026-10-20）：四场景 + Demo Web
+> 阶段：**W1/W2 完成**（2026-10-20）：四场景 + Demo Web + 注入/编码防御加固
 > 所有客户数据均为合成 Mock，不含真实个人信息或密钥。
 
 
@@ -66,9 +66,12 @@ PYTHONPATH=. python -m demo_web.app   # 打开 http://127.0.0.1:7860
 ## 测试与评测
 
 ```bash
-PYTHONPATH=. pytest -q                      # 131 passed
+PYTHONPATH=. pytest -q                      # 135 passed
 PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P168 / F3 / SKIP2（173 条，未美化）
 ```
+
+> **跑测试不需要、也不应该连 Mock Bank**：`tests/conftest.py` 会把 `MOCK_BANK_URL` 指到一个空端口，
+> 走文档里写的离线回退路径。这样「先起 Mock Bank 再跑 pytest」不会互相干扰（2026-10-20 修）。
 
 ## 快速开始 / Quick start
 
@@ -100,22 +103,50 @@ curl -s http://127.0.0.1:8000/v1/wealth/products | head
 python scripts/demo_wealth_ask.py
 ```
 
-### 3) Docker Compose（stub）
+### 3) Docker Compose（可选，需要本机已装 Docker）
 
 ```bash
 docker compose up --build
 # Mock Bank → http://127.0.0.1:8000
 ```
 
+> **本工程未在 Docker 内验证过**（提交机无 Docker）。评委请优先走上面的 venv 路径，
+> 该路径已在全新虚拟环境中实测：装依赖 → `135 passed`。
+
 ### 4) 测试
 
 ```bash
-pytest -q
+PYTHONPATH=. pytest -q     # 135 passed
 ```
+
+与第 2 步的 Mock Bank 互不影响：测试会自行避开 8000 端口。
 
 ---
 
-## 架构（W0） / Architecture
+## 两个进程 vs 一个进程：状态写在哪
+
+这是本工程最容易看错的地方，先说清：
+
+| 场景 | 资金/订阅状态存在哪 | 谁能看到写入 |
+|---|---|---|
+| `pytest` / `scripts/demo_wealth_ask.py` / `scripts/run_eval_v1.py` | **本进程内存**（`mock_bank/data.py` 的 seed） | 只有本进程；进程退出即复原 |
+| `uvicorn mock_bank.app:app` 单独起服务 + Agent 指向它 | **服务进程内存** | 所有连到该服务的客户端 |
+
+所以：
+
+- 不启 Mock Bank 时，Agent 走离线回退，`确认` 会把订阅改在**本进程**的 seed 上——演示够用。
+- 启了 Mock Bank 后，`确认` 的写入落在**服务进程**里。此时在本进程打印 `store.SUBSCRIPTIONS` 仍然看到旧值，
+  **这是正常的，不是 bug**。要看真实结果，请查服务端：
+
+```bash
+curl -s http://127.0.0.1:8000/v1/customers/cust_yw_001/subscriptions
+```
+
+`MOCK_BANK_URL` 环境变量控制 Agent 连哪个地址（默认 `http://127.0.0.1:8000`）。
+
+---
+
+## 架构 / Architecture
 
 ```
 User utterance

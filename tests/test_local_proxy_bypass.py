@@ -101,3 +101,58 @@ def test_no_proxy_helpers_are_used_for_env(monkeypatch):
     # bare calls that would silently re-enable the system proxy
     assert "httpx.get(" not in source.replace("return httpx.get(url", "")
     assert "httpx.post(" not in source.replace("return httpx.post(url", "")
+
+
+# ---------------------------------------------------------------------------
+# MOCK_BANK_URL plumbing (2026-10-20)
+#
+# .env.example has advertised MOCK_BANK_URL since W0, but nothing read it: every
+# call fell back to the hard-coded 127.0.0.1:8000. That made the suite depend on
+# the coincidence that no Mock Bank was running — README step 2 starts one, step 4
+# runs pytest, and doing both failed two confirmation tests because they took the
+# HTTP branch and asserted against local memory.
+# ---------------------------------------------------------------------------
+
+
+def test_mock_bank_url_env_is_honoured(monkeypatch):
+    from agent.graph import _default_bank_url
+
+    monkeypatch.delenv("MOCK_BANK_URL", raising=False)
+    assert _default_bank_url() == "http://127.0.0.1:8000"
+
+    monkeypatch.setenv("MOCK_BANK_URL", "http://127.0.0.1:59999")
+    assert _default_bank_url() == "http://127.0.0.1:59999"
+
+
+def test_explicit_argument_beats_env(monkeypatch):
+    """A caller-supplied URL must win so tests can target their own server."""
+    monkeypatch.setenv("MOCK_BANK_URL", "http://127.0.0.1:59999")
+    called = {}
+
+    from agent import graph
+
+    real_post = graph._local_http_post
+
+    def spy(url, payload):
+        called["url"] = url
+        return real_post(url, payload)
+
+    monkeypatch.setattr(graph, "_local_http_post", spy)
+    graph.pa.clear_store()
+    graph.run_agent("把 Spotify 月费改成 9", session_id="envarg",
+                    mock_bank_url="http://127.0.0.1:12345")
+    graph.run_agent("确认", session_id="envarg", mock_bank_url="http://127.0.0.1:12345")
+    assert "127.0.0.1:12345" in called.get("url", "")
+
+
+def test_confirmation_tests_cannot_reach_a_real_listener():
+    """Guard: with the session conftest, the default URL must not be a live server."""
+    import os
+
+    from agent.graph import _default_bank_url
+
+    url = os.environ.get("MOCK_BANK_URL") or _default_bank_url()
+    assert "8000" not in url, (
+        "conftest must pin MOCK_BANK_URL to an unused port; otherwise running "
+        "pytest while a Mock Bank is up changes which process receives the write"
+    )
