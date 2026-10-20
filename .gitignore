@@ -28,3 +28,7 @@ submit/demo/frames/*.mp4
 
 # OS
 .DS_Store
+
+# Volatile benchmark output — rerun scripts/bench_latency.py to regenerate.
+# Committing it makes the tree dirty every run and invites quoting stale numbers.
+data/evals/_bench_latency.json
