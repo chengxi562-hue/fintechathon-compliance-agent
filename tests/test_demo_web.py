@@ -32,3 +32,14 @@ def test_subscription_confirm_gate():
     _, t = run_scenario("② 订阅管理 + 二次确认（写操作需确认）")
     r = json.loads(t)
     assert r[1]["pending_id"] and r[2]["decision"] == "allow"
+
+
+def test_audit_panel_reads_real_jsonl(tmp_path):
+    """W2: 界面上的审计面板必须读真实 events.jsonl，不能只是把本轮 trace 再画一次。"""
+    from demo_web.app import audit_tail
+
+    before = audit_tail(1)
+    run_scenario("④ 拦截演示：保本诱导（合规门拦截）")
+    after = audit_tail(1)
+    assert after and after != before
+    assert "block" in after

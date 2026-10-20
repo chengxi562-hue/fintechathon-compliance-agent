@@ -16,7 +16,8 @@ gates:
       - chitchat
     # If user tries to override system / jailbreak
     inject_patterns:
-      - "(?i)ignore (all )?(previous|prior) (instructions|rules)"
+      # \s* 容忍空格拆词（C09）与去空白归一（C01）
+      - "(?i)ignore\\s*(all\\s*)?(previous|prior)\\s*(instructions|rules)"
       - "忽略(上面|之前|以上)的?(指令|规则)"
       - "無視して"
       - "(?i)developer mode"
@@ -30,6 +31,23 @@ gates:
       - "(?i)jailbreak"
       - "disable all gates|不要再跑门控"
       - "现在开始角色扮演"
+      # --- 2026-10-20 编码/越狱族扩充（评测集 27 条 block→allow 的根因） ---
+      - "(?i)d\\s*a\\s*n\\s*mode|do anything now"
+      - "(?i)no restrictions|without restrictions|unrestricted (assistant|mode)"
+      - "(?i)forget (your|all|the) (previous )?(instructions|rules|prompt)"
+      - "(?i)you are now (an? )?(unrestricted|unfiltered|evil|different)"
+      - "(?i)enable developer mode|developer mode enabled"
+      - "忽略(我|你|所有|全部|一切)?的?(个人)?(偏好|设定|限制|约束)"
+      - "忽略(上面|之前|以上|一切)的?(所有)?(指令|规则|限制)"
+      - "(?i)只回答\\s*(yes|no)\\$?"
+      - "管理员|【管理员】|admin(istrator)? mode"
+      - "阈值.{0,6}(改为|改到|设为|调成)\\s*0"
+      - "可以承诺收益|承诺收益|保证收益的?(话术|回复)"
+      - "你现在是(理财经理|私行顾问|投资顾问|店长)"
+      - "(?i)system\\s*prompt|系统指令[:：]"
+      # 把编码串当指令/金额执行（C05）——要求先解码再执行的内容一律不接
+      - "解码.{0,8}(当作|作为|照做|执行|转)"
+      - "(当作|作为).{0,4}(金额|指令).{0,6}(转|执行|照做)"
     # 间接注入载体（网页/账单备注/HTML 注释），details 标 via: indirect
     indirect_inject_patterns:
       - "(?i)<!--\\s*(SYSTEM|assistant)"
@@ -40,6 +58,7 @@ gates:
   auth_scope:
     scope_patterns:
       - "张三|李四|王五"
+      - "别人|他人|其他人|别的客户|其他客户|他们家"
       - "我老公|他老婆|我老婆|别人的|其他客户|所有客户|全部客户"
       - "小区.*谁"
       - "cust_(?!yw_001)\\w+"
@@ -47,6 +66,10 @@ gates:
       - "导出.{0,8}(客户|Excel|excel)"
     self_service_patterns:
       - "风险测评.{0,6}(改|调|改到|设为|调成)"
+      # 自述财力/自评等级不得覆盖既定测评结果（W18/R01 族）
+      - "(年收入|年薪|我有|身家|资产)\\s*[0-9零一二三四五六七八九十百千万]+\\s*(万|万元|亿)?"
+      - "直接给我\\s*R[45]|给我\\s*R[45]\\s*的"
+      - "签个?免责|签个?风险承诺|免责声明就能"
     delegation_patterns:
       - "帮他|替她|帮她|替他|代客"
 
@@ -57,6 +80,11 @@ gates:
       - WB_BOND_002
       - WB_EQ_MIX_003
     reject_unknown_product: true
+    # 疑似目录外/语境化产品指代：「XX银行理财 999」这类写法必须拦
+    off_catalog_product_patterns:
+      - "目录外"
+      - "[A-Za-z一-龥]{2,8}银行(理财|产品)"
+      - "(理财|基金|产品)\\s*[0-9]{3,}"
     # 目录外/幻觉品名：出现即拦，不做近名纠正
     suspect_names:
       - "稳盈宝"
@@ -92,6 +120,15 @@ gates:
       - "稳赚不赔"
       - "保证收益"
       - "最安全"
+
+clarify:
+  # 意图模糊、不得直接给出资金动作/产品动作的问法 → 先澄清
+  ambiguous_patterns:
+    - "房贷怎么还|怎么还划算|还贷划算"
+    - "随便推荐|随便来一个|你看着办"
+    - "全部身家|全押|梭哈"
+    # M02：声称「已确认过」不能替代系统确认门
+    - "确认过了|已经确认过|不用再确认|无需确认|早就确认"
 
 transfer:
   daily_soft_limit_cny: 20000

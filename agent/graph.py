@@ -80,9 +80,24 @@ def _plan_for_intent(intent: str) -> list[str]:
     return ["classify_intent", "run_four_compliance_gates", "respond", "audit"]
 
 
+# Local Mock Bank always lives on loopback. httpx honours the operator's system
+# proxy by default (macOS HTTPProxy/SOCKSProxy), which turns a healthy
+# 127.0.0.1:8000 Mock Bank into HTTP 502 and makes every confirmed write look
+# like a bank rejection. Never let a proxy carry loopback traffic.
+_HTTP_TIMEOUT = 3.0
+
+
+def _local_http_get(url: str) -> "httpx.Response":
+    return httpx.get(url, timeout=_HTTP_TIMEOUT, trust_env=False)
+
+
+def _local_http_post(url: str, payload: dict[str, Any]) -> "httpx.Response":
+    return httpx.post(url, json=payload, timeout=_HTTP_TIMEOUT, trust_env=False)
+
+
 def _fetch_product(mock_bank_url: str, product_id: str) -> dict[str, Any] | None:
     try:
-        r = httpx.get(f"{mock_bank_url.rstrip('/')}/v1/wealth/products/{product_id}", timeout=3.0)
+        r = _local_http_get(f"{mock_bank_url.rstrip('/')}/v1/wealth/products/{product_id}")
         if r.status_code == 200:
             return r.json()
     except httpx.HTTPError:
@@ -175,6 +190,8 @@ def _transfer_decision(utterance: str, rules: dict) -> tuple[str, str, list[str]
     if amount > soft:
         reasons.append("TRANSFER_SOFT_LIMIT")
         return "block", f"金额 {amount:.0f} 元超过日软限额 {soft:.0f} 元，已拦截。", reasons
+    # 阈值语义：恰好等于 require_confirm_above 时放行（strictly greater requires confirm）。
+    # Mock Bank 侧已同步改成同一比较符，避免「Agent 说可以、银行说要确认」的分歧。
     if amount > confirm_above:
         reasons.append("TRANSFER_CONFIRM_REQUIRED")
         return "block", f"金额 {amount:.0f} 元{count_note}需二次确认后才能执行（阈值 {confirm_above:.0f} 元）。", reasons
@@ -240,6 +257,18 @@ def _transfer_turn(
         pend.after = dict(bank_seed.ACCOUNTS[pend.payload["from_account_id"]])
         tools.append({"tool": "transfer_apply", "ok": True, "data": data, "pending_id": pend.pending_id})
         return "allow", "已确认并完成 Mock Bank 演示转账（仅内存模拟），审计已记录。", ["PENDING_CONFIRMED", "TRANSFER_APPLIED"], tools, pend.pending_id
+
+    # M03：引用「刚才那笔 / 接着上一笔 / 同上」等前文指代，但会话里没有任何待确认单
+    # → 不能凭上下文缺失直接执行，必须先澄清。
+    if re.search(r"接着(刚才|上面|上|之前)(那笔|的|一笔)?|刚才那笔|上一笔|同上|还是那笔", utterance):
+        if pa.latest_for_session(session_id) is None:
+            return (
+                "block",
+                "我没有找到您说的上一笔转账（本会话没有待确认单）。请重新说明金额与收款账户，我不会凭指代直接执行。",
+                ["TRANSFER_CONTEXT_MISSING"],
+                tools,
+                None,
+            )
 
     decision, response, reasons = _transfer_decision(utterance, rules)
     tools.append({"tool": "transfer_check", "ok": decision == "allow", "amount": _parse_transfer_amount(utterance), "reasons": reasons})
@@ -331,10 +360,9 @@ def _subscription_turn(
         if pend.action == "change_amount":
             payload["new_amount_cny"] = pend.payload.get("new_amount_cny")
         try:
-            r = httpx.post(
+            r = _local_http_post(
                 f"{mock_bank_url.rstrip('/')}/v1/subscriptions/{pend.target_id}/apply",
-                json=payload,
-                timeout=3.0,
+                payload,
             )
             ok = r.status_code == 200
             data = r.json() if ok else {"detail": r.text}
@@ -501,7 +529,24 @@ def _bill_insight_turn(
         if str(b.get("posted_at", "")).startswith("2026-10")
     )
 
-    lines: list[str] = ["【账单洞察】本月相关支出摘要："]
+    # B03: 用户声称的金额若在账单中不存在，不得编造或默认附和，必须先否认再给真实数据
+    # 只在「断言这笔钱已经扣过」的语境下核对，避免把「转 300 元去备用金」当成既成扣款
+    # 只认「断言已被扣款」的措辞；「怎么多了 3000 元」是询问归因（X08 期望 allow），不算断言
+    asserted = re.findall(
+        r"(?:扣款|扣了|被扣|消费了|花了我)[^\d]{0,6}(\d{3,})\s*元"
+        r"|(\d{3,})\s*元[^\d]{0,6}(?:扣款|扣了|被扣)",
+        utterance,
+    )
+    claimed = [float(a or b) for a, b in asserted]
+    missing = [c for c in claimed if not any(abs(float(b.get("amount_cny") or 0) - c) < 0.01 for b in bills)]
+    if missing:
+        amt = "、".join(f"{m:.0f}" for m in missing)
+        lines: list[str] = [
+            f"【账单核验】我在您的账单记录里没有找到 {amt} 元的扣款，"
+            "因此无法确认这笔交易的真实性；以下只列实际存在的账单，不做推测。"
+        ]
+    else:
+        lines = ["【账单洞察】本月相关支出摘要："]
     if takeout:
         lines.append(f"- 外卖/餐饮相关合计约 {takeout_sum:.0f} 元（{len(takeout)} 笔）")
         for b in takeout[:4]:
@@ -542,6 +587,10 @@ def _bill_insight_turn(
     # Hard rule: insight-only — never emit fund-write tools
     write_tools = {"transfer_apply", "subscription_apply", "wealth_purchase_apply", "purchase_apply"}
     assert not any(t.get("tool") in write_tools for t in tools)
+
+    if missing:
+        # 用户声称的扣款不存在：不确认、不附和（默认拒绝），但把真实账单摆出来
+        return "block", "\n".join(lines), reasons + ["BILL_CLAIM_UNVERIFIED"], tools, None
 
     return "allow", "\n".join(lines), reasons, tools, None
 

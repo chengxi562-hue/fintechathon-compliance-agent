@@ -119,7 +119,8 @@ def create_transfer(body: TransferRequest) -> dict[str, Any]:
             f"TRANSFER_BANK_DAILY_LIMIT_EXCEEDED: daily soft limit {DAILY_SOFT_LIMIT_CNY}",
         )
     # Soft policy hint for agent layer; bank still executes if confirmed
-    needs_confirm = body.amount_cny >= 5000 and not body.confirmed
+    # 与 Agent 侧同一比较符：恰好 5000 放行，>5000 才需二次确认
+    needs_confirm = body.amount_cny > 5000 and not body.confirmed
     if needs_confirm:
         return {
             "status": "pending_confirm",

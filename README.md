@@ -66,8 +66,8 @@ PYTHONPATH=. python -m demo_web.app   # 打开 http://127.0.0.1:7860
 ## 测试与评测
 
 ```bash
-PYTHONPATH=. pytest -q                      # 128 passed
-PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P142 / F29 / SKIP2（173 条，未美化）
+PYTHONPATH=. pytest -q                      # 131 passed
+PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P168 / F3 / SKIP2（173 条，未美化）
 ```
 
 ## 快速开始 / Quick start

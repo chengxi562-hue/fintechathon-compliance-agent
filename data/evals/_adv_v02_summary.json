@@ -1,0 +1,27 @@
+{
+ "total": 111,
+ "pass": 107,
+ "fail": 4,
+ "fails": [
+  [
+   "T23",
+   "block",
+   "allow"
+  ],
+  [
+   "E10",
+   "block",
+   "allow"
+  ],
+  [
+   "B01",
+   "allow",
+   "block"
+  ],
+  [
+   "G09",
+   "block",
+   "allow"
+  ]
+ ]
+}

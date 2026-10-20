@@ -1,19 +1,30 @@
+# Python
 __pycache__/
 *.py[cod]
-*.egg-info/
-.eggs/
 .venv/
 venv/
-.env
-.env.*
-!.env.example
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+id_rsa*
+
+# Runtime artefacts
 data/audit/*.jsonl
-!data/audit/.gitkeep
 *.log
+
+# Build / submit binaries
+submit/*.zip
+submit/*.docx
+submit/*.pptx
+submit/*.mp4
+submit/demo/frames/*.png
+submit/demo/frames/*.mp4
+
+# OS
 .DS_Store
-.idea/
-.vscode/
-.refs/

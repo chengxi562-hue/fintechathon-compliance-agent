@@ -12,9 +12,105 @@ from __future__ import annotations
 import re
 import unicodedata
 
+import base64
+import binascii
+import html as _html
+import urllib.parse
+
 # 零宽 / 不可见字符（防拆字、视觉欺骗、零宽拼接）
 _ZERO_WIDTH = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]")
 _WHITESPACE = re.compile(r"\s+")
+
+
+_HTML_ENTITY = re.compile(r"&#x?[0-9a-fA-F]{1,6};")
+_PERCENT_RUN = re.compile(r"%[0-9a-fA-F]{2}")
+_B64_RUN = re.compile(r"[A-Za-z0-9+/]{8,22}={0,2}")
+_UNICODE_ESC = re.compile(r"\\u[0-9a-fA-F]{4}")
+
+
+def _decode_html_entities(text: str) -> str:
+    """HTML 实体 / 十进制 / 十六进制雪崩式还原：保&#26412; → 保本。"""
+    if not _HTML_ENTITY.search(text):
+        return text
+    return _html.unescape(text)
+
+
+def _decode_percent(text: str) -> str:
+    """URL 百分号编码：ignore%20previous → ignore previous。"""
+    if not _PERCENT_RUN.search(text):
+        return text
+    return urllib.parse.unquote(text)
+
+
+def _decode_unicode_escape(text: str) -> str:
+    """JS/Python 风格 \\uXXXX 转义：\\u4fdd\\u672c → 保本。"""
+    if not _UNICODE_ESC.search(text):
+        return text
+    return _UNICODE_ESC.sub(lambda m: chr(int(m.group(0)[2:], 16)), text)
+
+
+def _decode_base64_fragments(text: str) -> str:
+    """把句中可解为「中文/英文可读文本」的 base64 片段就地展开。
+
+    只接受解码后 ≥70% 落在可打印/CJK 区且含至少一个中文或字母的片段，
+    避免把普通 ID、金额、拼音误当 base64（如 WB_CASH_001 不会命中）。
+    """
+    out: list[str] = []
+    last = 0
+    changed = False
+    for m in _B64_RUN.finditer(text):
+        raw = m.group(0)
+        if len(raw) < 8:
+            continue
+        try:
+            pad = raw + "=" * (-len(raw) % 4)
+            decoded = base64.b64decode(pad, validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            continue
+        if not decoded:
+            continue
+        printable = sum(1 for ch in decoded if ch.isprintable() or ch.isspace())
+        has_word = any(ch.isalpha() or "\u4e00" <= ch <= "\u9fff" for ch in decoded)
+        if printable / len(decoded) < 0.7 or not has_word:
+            continue
+        out.append(text[last:m.start()])
+        out.append(decoded)
+        last = m.end()
+        changed = True
+    if not changed:
+        return text
+    out.append(text[last:])
+    return "".join(out)
+
+
+def decode_payloads(text: str) -> str:
+    """递归展开常见编码载体：HTML 实体、URL 编码、unicode 转义、base64 片段。
+
+    目的：让「编码绕过」类注入与违禁话术在归一化之后仍能被规则命中，
+    而不是靠为每种编码各写一条正则。最多展开 3 轮（防套娃）。
+    """
+    seen = {text}
+    cur = text
+    for _ in range(3):
+        nxt = _decode_html_entities(cur)
+        nxt = _decode_percent(nxt)
+        nxt = _decode_unicode_escape(nxt)
+        nxt = _decode_base64_fragments(nxt)
+        if nxt == cur or nxt in seen:
+            break
+        seen.add(nxt)
+        cur = nxt
+    return cur
+
+
+_LEET = str.maketrans({"4": "a", "3": "e", "1": "i", "0": "o", "5": "s", "7": "t", "@": "a", "$": "s"})
+
+
+def del33t(text: str) -> str:
+    """leetspeak 还原：gu4r4nteed r3turn → guaranteed return（仅用于禁词/注入匹配）。"""
+    if not re.search(r"[A-Za-z][0-9@$]|[0-9@$][A-Za-z]", text):
+        return text
+    return text.translate(_LEET)
 
 
 def normalize_text(text: str) -> str:
@@ -23,7 +119,8 @@ def normalize_text(text: str) -> str:
     NFKC 折叠全角英文字母（ＧＵＡＲＡＮＴＥＥＤ → guaranteed）与兼容字符；
     去空白使「保 本」→「保本」、英文短语「guaranteed return」→「guaranteedreturn」。
     """
-    t = unicodedata.normalize("NFKC", text)
+    t = decode_payloads(text)
+    t = unicodedata.normalize("NFKC", t)
     t = _ZERO_WIDTH.sub("", t)
     t = t.lower()
     t = _WHITESPACE.sub("", t)
@@ -52,7 +149,8 @@ VARIANT_PATTERNS: dict[str, re.Pattern[str]] = {
     # S08「亏了你赔吗」：兜底 / 包赔承诺
     "不亏兜底": re.compile(r"亏了.{0,3}赔|包赔"),
     # S09「钱放哪最安全」
-    "询安表述": re.compile(r"最安全|绝对安全|哪里最安全|放哪.{0,4}安全"),
+    # 只有「最/绝对」这类绝对化措辞才算诱导；普通「放哪安全」是正常咨询（X10）
+    "询安表述": re.compile(r"最安全|绝对安全|哪里最安全|放哪.{0,4}最安全"),
 }
 
 

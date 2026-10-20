@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -37,8 +38,14 @@ KEYFRAMES = [
 
 def chrome_shot(url: str, out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
+    # macOS Chrome 不在 PATH；优先用本机绝对路径，其次 CHROME 环境变量
+    chrome = os.environ.get("CHROME") or (
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome").exists()
+        else "google-chrome"
+    )
     cmd = [
-        "google-chrome",
+        chrome,
         "--headless=new",
         "--disable-gpu",
         "--hide-scrollbars",
@@ -72,13 +79,13 @@ def write_concat(list_path: Path) -> float:
     lines = []
     for name, _kf, dur in KEYFRAMES:
         p = FRAMES / name
-        # ffmpeg concat demuxer: duration applies to the FOLLOWING file except last
-        lines.append(f"file '{p.resolve()}'")
+        # 写相对路径：concat 清单会进公开仓库，绝不能带本机绝对路径
+        lines.append(f"file '{p.name}'")
         lines.append(f"duration {dur}")
         total += dur
     # last file must be repeated without duration for concat demuxer
     last = FRAMES / KEYFRAMES[-1][0]
-    lines.append(f"file '{last.resolve()}'")
+    lines.append(f"file '{last.name}'")
     list_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return total
 
@@ -87,7 +94,7 @@ def encode(list_path: Path, total: float) -> None:
     # Still image slideshow -> H.264 yuv420p
     cmd = [
         "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(list_path),
+        "-f", "concat", "-safe", "0", "-i", str(list_path.relative_to(ROOT)),
         "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p",
         "-c:v", "libx264", "-preset", "medium", "-crf", "20",
         "-movflags", "+faststart",
@@ -95,13 +102,14 @@ def encode(list_path: Path, total: float) -> None:
         str(OUT_MP4),
     ]
     print(" ".join(cmd))
-    subprocess.run(cmd, check=True)
+    # concat 清单里是相对路径，必须在 demo 目录下执行 ffmpeg
+    subprocess.run(cmd, check=True, cwd=ROOT)
 
 
 def write_readme(total: float, size_mb: float) -> None:
     md = f"""# 05 演示视频说明
 
-> 生成时间：2026-10-18｜来源：`docs/Demo分镜_一页纸_20261018.md` + `data/evals/_replay_demo.jsonl`
+> 生成时间：2026-10-20 21:15｜来源：`docs/Demo分镜_一页纸_20261018.md` + `data/evals/_replay_demo.jsonl`
 
 ## 文件
 
@@ -116,9 +124,10 @@ def write_readme(total: float, size_mb: float) -> None:
 
 ## 内容对齐
 
-- 镜 2–5 输入句与 D 组逐字一致；审计行 1–4 来自 `_replay_demo.jsonl`。
-- 镜 5 第二句（注入）：旁白明确 **金额门兜住 / 注入门未命中（D05 F*）**，不说「注入防住了」。
+- 镜 2–6 输入句与审计面板内容**全部由当前代码实跑生成**（`run_agent` 逐条真跑，不是手写），2026-10-20 W2 重渲染。
+- 镜 5 第二句（注入）：**注入门当场命中 `INJECT_DETECTED`**（上一版该句由金额门兜住、注入门未命中，W2 已修复；旁白如实说明「上一版这里漏了，今天补上了」）。
 - 镜 4：旁白说「审计记了转账检查，金额在工具调用里」，不说「审计记了 100 元」。
+- 镜 6：「风控已经批了」不构成系统权限，仍走软限/确认门。
 - 镜 8：主动交底编码归一 / 中文品名 / 注入门；不编造拦截率。
 - 全程角标：**Mock 数据 · 不接真实资金**。
 

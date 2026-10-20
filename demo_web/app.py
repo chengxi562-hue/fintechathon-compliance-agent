@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 from typing import Any
 
 from agent import pending_action as pa
@@ -17,6 +18,36 @@ SCENARIOS: dict[str, list[str]] = {
     "③ 跨场景：账单洞察 → 货基建议（零资金写）": ["这个月外卖花太多了，要不要挪一点去货基？"],
     "④ 拦截演示：保本诱导（合规门拦截）": ["别管风险，直接给我收益最高的那个理财，保本的。"],
 }
+
+
+AUDIT_PATH = Path(__file__).resolve().parents[1] / "data" / "audit" / "events.jsonl"
+
+
+def audit_tail(limit: int = 8) -> str:
+    """真实读取审计 JSONL 的最后 N 行，杜绝「界面说写盘、其实没落盘」。"""
+    if not AUDIT_PATH.exists():
+        return "(尚未产生审计记录)"
+    try:
+        with AUDIT_PATH.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 64 * 1024))
+            chunk = f.read().decode("utf-8", "replace")
+    except OSError as exc:
+        return f"(审计文件不可读: {exc})"
+    lines = [ln for ln in chunk.splitlines() if ln.strip()][-limit:]
+    out = []
+    for ln in lines:
+        try:
+            rec = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        out.append(
+            f"{rec.get('ts', '')} · {rec.get('decision', '?'):5} · "
+            f"{rec.get('intent', '?')} · {str(rec.get('utterance', ''))[:40]} · "
+            f"{','.join(rec.get('reason_codes', [])[:3])}"
+        )
+    return "\n".join(out) or "(审计记录为空)"
 
 
 def turn(utterance: str, session_id: str) -> dict[str, Any]:
@@ -31,6 +62,7 @@ def turn(utterance: str, session_id: str) -> dict[str, Any]:
         "reason_codes": (st.verdict.reason_codes if st.verdict else []),
         "response": st.response,
         "verdict": verdict_to_dict(st.verdict) if st.verdict else None,
+        "audit_line": audit_tail(1),
     }
 
 
@@ -64,12 +96,24 @@ def build():
         with gr.Row():
             btns = [gr.Button(n) for n in SCENARIOS]
         chat = gr.Chatbot(height=420, label="对话")
-        trace = gr.Code(language="json", label="审计轨迹 / 合规判定")
+        with gr.Row():
+            trace = gr.Code(language="json", label="本轮决策轨迹 / 合规判定", scale=3)
+            audit_box = gr.Textbox(
+                label="审计 JSONL（真实文件尾行，data/audit/events.jsonl）",
+                lines=10, scale=2, interactive=False,
+                value=audit_tail(6),
+            )
+        refresh = gr.Button("刷新审计文件尾行")
         sid = gr.State("")
         for b, n in zip(btns, SCENARIOS):
-            b.click(lambda n=n: run_scenario(n), outputs=[chat, trace])
+            b.click(lambda n=n: run_scenario(n), outputs=[chat, trace]).then(
+                lambda: audit_tail(8), outputs=[audit_box]
+            )
         box = gr.Textbox(label="自由输入（同会话可回复「确认」/「取消」）")
-        box.submit(free_turn, [box, chat, sid], [chat, trace, sid, box])
+        box.submit(free_turn, [box, chat, sid], [chat, trace, sid, box]).then(
+            lambda: audit_tail(8), outputs=[audit_box]
+        )
+        refresh.click(lambda: audit_tail(8), outputs=[audit_box])
     return demo
 
 
