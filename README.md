@@ -15,6 +15,10 @@
 四道合规门：**意图 → 产品匹配 → 适当性 → 话术**  
 Four gates: **intent → product match → suitability → script**
 
+> 主叙事是「四道门」。实现里另有一道**澄清门**（`gate_clarify`）：问法模糊、要「梭哈」、
+> 或自称 VIP 施压时，先澄清而不是执行。它不改变四门叙事，只兜住「四门都过了但问题本身不成立」的情形。
+> 详见 [`docs/W2_注入编码防御加固_执行说明_20261020.md`](docs/W2_注入编码防御加固_执行说明_20261020.md)。
+
 演示客群（已锁定）：有一定可投资产的**年轻白领**（非在校生）。见 [`docs/persona.md`](docs/persona.md)。  
 Demo persona (locked): **young white-collar with investable assets** (not students). See [`docs/persona.md`](docs/persona.md).
 
@@ -153,15 +157,16 @@ User utterance
     → Intent classify
     → Plan (explicit steps)
     → Compliance Gate ×4  (YAML rules)
-         1. intent / inject
+         1. auth_scope / intent / inject   （含编码归一后的二次扫描）
          2. product catalog allowlist
          3. suitability (risk_score vs product)
-         4. script (禁「保本/稳赚…」+ 披露提示)
+         4. script (禁「保本/稳赚…」+ 强制披露)
+    → Clarify Gate     (问法模糊/梭哈/VIP 施压 → 先澄清不执行)
     → Tools (Mock Bank HTTP) only if allowed
     → Explain + Audit JSONL
 ```
 
-`agent/graph.py` 已按未来 **LangGraph** 节点切分；W0 用纯 Python 状态机，保证无 LLM Key 也可演示拦/放行。
+`agent/graph.py` 已按未来 **LangGraph** 节点切分；当前用纯 Python 状态机，保证无 LLM Key 也可演示拦/放行。
 
 ---
 
