@@ -3,8 +3,8 @@
 
 > FinTechathon 2026 · 赛道：银行 AI 智能体（AI Banking Agent）  
 > 队伍：弋承熙 & 高依灵 · 工程主责：Grok Bot  
-> 阶段：**W0 底座脚手架**（2026-10-16）
-> 仓库状态：本地 git 已 init，**未挂远端**（`git remote -v` 为空）。详见 [`docs/仓库初始化说明_20261018.md`](docs/仓库初始化说明_20261018.md)。
+> 阶段：**W1**（2026-10-20）：四场景 + Demo Web
+> 所有客户数据均为合成 Mock，不含真实个人信息或密钥。
 
 
 ## 一句话 / One-liner
@@ -54,12 +54,28 @@ fintechathon/
 
 ---
 
+## Demo Web（Gradio）
+
+```bash
+pip install -r requirements.txt
+PYTHONPATH=. python -m demo_web.app   # 打开 http://127.0.0.1:7860
+```
+
+四个按钮：① 稳健理财咨询（放行）② 订阅修改 + 二次确认 ③ 跨场景账单洞察→货基建议（零资金写）④ 保本诱导拦截。右侧/下方展示意图、计划、工具调用与合规 reason codes 审计轨迹。
+
+## 测试与评测
+
+```bash
+PYTHONPATH=. pytest -q                      # 128 passed
+PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P142 / F29 / SKIP2（173 条，未美化）
+```
+
 ## 快速开始 / Quick start
 
 ### 0) 依赖
 
 ```bash
-cd /workspace/company/fintechathon
+cd <repo-root>
 python3 -m venv .venv && source .venv/bin/activate   # 所有复现/评测脚本均在 .venv 中运行
 pip install -r requirements.txt
 ```

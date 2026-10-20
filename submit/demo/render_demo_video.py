@@ -130,7 +130,7 @@ def write_readme(total: float, size_mb: float) -> None:
 复跑：
 
 ```bash
-cd /workspace/company/fintechathon/submit/demo
+cd <repo-root>/submit/demo
 python3 render_demo_video.py
 ```
 

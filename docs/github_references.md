@@ -1,7 +1,7 @@
 # GitHub 开源参考（FinTechathon · 合规先审银行 Agent）
 
 > 检索日期：2026-10-16（Asia/Shanghai）  
-> 目标栈：`/workspace/company/fintechathon`（四道门 intent→product→suitability→script + Mock Bank + JSONL 审计 + LangGraph-ready）  
+> 目标栈：`<repo-root>`（四道门 intent→product→suitability→script + Mock Bank + JSONL 审计 + LangGraph-ready）  
 > 用法：**借鉴架构与评测思路**；默认只读 / 对照，不把整仓 vendoring 进本树。  
 > **许可证红线**：未核对许可证前不要拷贝代码；**GPL / AGPL 代码不得并入本仓库**（除非单独注明并隔离，且比赛交付允许）。Apache-2.0 / MIT 可参考实现思路，合并前仍要保留 NOTICE/版权头。
 
@@ -104,7 +104,7 @@
 ### 快速 clone（只读参考目录示例，勿混进 src）
 
 ```bash
-mkdir -p /workspace/company/fintechathon/.refs && cd /workspace/company/fintechathon/.refs
+mkdir -p <repo-root>/.refs && cd <repo-root>/.refs
 # MIT / Apache-2.0 优先
 git clone --depth 1 https://github.com/look378/finance-intelligent-agent.git
 git clone --depth 1 https://github.com/SebAustin/fsi-compliance-agent.git
@@ -114,7 +114,7 @@ git clone --depth 1 https://github.com/AI4Finance-Foundation/FinRAG.git
 git clone --depth 1 https://github.com/AI4Finance-Foundation/FinRobot.git
 git clone --depth 1 https://github.com/The-FinAI/FinBen.git
 git clone --depth 1 https://github.com/open-compass/CNFinBench.git   # 许可证未标明：只读，勿拷进交付
-echo ".refs/" >> /workspace/company/fintechathon/.gitignore  # 若尚未忽略
+echo ".refs/" >> <repo-root>/.gitignore  # 若尚未忽略
 ```
 
 ---

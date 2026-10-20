@@ -543,6 +543,6 @@ const TOTAL = 9;
   footer(s, 9, TOTAL);
 }
 
-pres.writeFile({ fileName: "/workspace/company/fintechathon/submit/02_答辩材料_v0.pptx" })
+pres.writeFile({ fileName: "<repo-root>/submit/02_答辩材料_v0.pptx" })
   .then(() => console.log("pptx written"))
   .catch((e) => { console.error(e); process.exit(1); });
