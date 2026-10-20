@@ -6,7 +6,7 @@ from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
-OUT = Path("<repo-root>/submit/04_安全自评报告_v0.docx")
+OUT = Path(__file__).resolve().parents[1] / ("04_安全自评报告_v0.docx")
 
 doc = Document()
 for section in doc.sections:

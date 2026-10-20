@@ -6,7 +6,7 @@ from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
-OUT = Path("<repo-root>/submit/01_技术文档_v0.docx")
+OUT = Path(__file__).resolve().parents[1] / ("01_技术文档_v0.docx")
 
 doc = Document()
 # page margins
