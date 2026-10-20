@@ -33,6 +33,27 @@ _COUNT_EXCLUDE = [
 ]
 
 
+def _pytest_full() -> int:
+    """全量 pytest 通过数（含数字一致性守卫）——对外材料引用这个。
+
+    与 _pytest_passed() 的区别：后者排除了守卫自身以避开自指循环，
+    只用于「材料数字比对」这一个内部用途。对外说「我们有几条测试」时，
+    守卫也是测试，应当计入。
+    """
+    r = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "--tb=no"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=900,
+        env={"PYTHONPATH": ".", "PATH": "/usr/bin:/bin:/usr/local/bin"},
+    )
+    m = re.search(r"(\d+) passed", r.stdout)
+    if not m:
+        raise RuntimeError(f"pytest 汇总行解析失败：{r.stdout[-800:]}")
+    return int(m.group(1))
+
+
 def _pytest_passed() -> int:
     """解析 pytest 汇总行，取真实通过数（不靠猜、不靠手填）。"""
     args = [sys.executable, "-m", "pytest", "-q", "--tb=no"]
@@ -107,6 +128,9 @@ def _baseline() -> dict:
 
 def main() -> int:
     data = {
+        # 对外口径：全量（含守卫）
+        "pytest_total_passed": _pytest_full(),
+        # 内部口径：排除守卫，供材料数字比对，避免自指
         "pytest_passed": _pytest_passed(),
         "eval_v1": _eval_metrics(),
         "adversarial": _adv_metrics(),

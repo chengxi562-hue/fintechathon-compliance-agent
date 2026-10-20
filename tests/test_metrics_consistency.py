@@ -61,7 +61,9 @@ def test_metrics_json_exists():
 
 
 def test_no_stale_test_counts_in_submission_materials():
-    expected = _metrics_or_skip()["pytest_passed"]
+    m = _metrics_or_skip()
+    # 材料里写的是「全量」；这里比对全量
+    expected = m["pytest_total_passed"]
     offenders = []
     for rel in TARGETS:
         p = ROOT / rel

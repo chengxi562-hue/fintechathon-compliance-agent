@@ -70,7 +70,7 @@ PYTHONPATH=. python -m demo_web.app   # 打开 http://127.0.0.1:7860
 ## 测试与评测
 
 ```bash
-PYTHONPATH=. pytest -q                      # 137 passed
+PYTHONPATH=. pytest -q                      # 141 passed
 PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P168 / F3 / SKIP2（173 条，未美化）
 ```
 
@@ -115,12 +115,12 @@ docker compose up --build
 ```
 
 > **本工程未在 Docker 内验证过**（提交机无 Docker）。评委请优先走上面的 venv 路径，
-> 该路径已在全新虚拟环境中实测：装依赖 → `137 passed`。
+> 该路径已在全新虚拟环境中实测：装依赖 → `141 passed`。
 
 ### 4) 测试
 
 ```bash
-PYTHONPATH=. pytest -q     # 137 passed
+PYTHONPATH=. pytest -q     # 141 passed
 ```
 
 与第 2 步的 Mock Bank 互不影响：测试会自行避开 8000 端口。

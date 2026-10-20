@@ -38,7 +38,7 @@ def load_metrics() -> dict:
 # 模块级占位；真实值在 main() 里由 load_metrics() 填充。
 # 不在顶层读文件：_metrics.json 是实跑产物、故意不入库，
 # 顶层读会让任何 import（含测试）在无该文件时崩掉。
-PY = EV = ADV = BL = None
+PY = PY_FULL = EV = ADV = BL = None
 
 # 历史快照：只记录当时状态，不随数字变化而改写
 HISTORICAL = {
@@ -70,7 +70,8 @@ def sync_file(rel: str) -> int:
         return 0
     s = orig = p.read_text(encoding="utf-8")
 
-    s = PASSED_RE.sub(lambda m: f"{PY} passed", s)
+    # 对外材料引用「全量」通过数（含守卫），这是观众看到的口径
+    s = PASSED_RE.sub(lambda m: f"{PY_FULL} passed", s)
 
     # 评测集汇总（只在明确写「P…/F…」的地方改，模式稳定）
     s = re.sub(r"P\s*\d{2,3}\s*/\s*F\s*\d{1,3}\s*/\s*SKIP\s*\d",
@@ -86,6 +87,9 @@ def sync_file(rel: str) -> int:
     # 基线对照
     s = s.replace("43.9%", f"{BL['naive_rate']}%").replace("98.2%", f"{BL['gated_rate']}%")
 
+    # 「N 条测试」这类汉字数词也要跟着走，否则 row 内部会自相矛盾
+    s = re.sub(r"\b\d{2,4}\s*条测试\b", f"{PY_FULL} 条测试", s)
+
     if s != orig:
         p.write_text(s, encoding="utf-8")
         return sum(1 for a, b in zip(orig.splitlines(), s.splitlines()) if a != b)
@@ -93,13 +97,14 @@ def sync_file(rel: str) -> int:
 
 
 def main() -> int:
-    global M, PY, EV, ADV, BL
+    global M, PY, PY_FULL, EV, ADV, BL
     M = load_metrics()
     PY = str(M["pytest_passed"])
+    PY_FULL = str(M["pytest_total_passed"])
     EV = M["eval_v1"]
     ADV = M["adversarial"]
     BL = M["baseline_no_gates"]
-    print(f"目标数字：pytest={PY} 评测集={EV['pass']}/{EV['total']} "
+    print(f"目标数字：pytest(对外)={PY_FULL} pytest(内部比对)={PY} 评测集={EV['pass']}/{EV['total']} "
           f"对抗集={ADV['pass']}/{ADV['total']} 基线={BL['gated_rate']}% vs {BL['naive_rate']}%")
     total = 0
     for rel in TARGETS:
