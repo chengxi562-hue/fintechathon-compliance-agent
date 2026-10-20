@@ -32,3 +32,6 @@ submit/demo/frames/*.mp4
 # Volatile benchmark output — rerun scripts/bench_latency.py to regenerate.
 # Committing it makes the tree dirty every run and invites quoting stale numbers.
 data/evals/_bench_latency.json
+
+# 已被 scripts/collect_metrics.py → data/evals/_metrics.json 取代的旧快照
+data/evals/_metrics_snapshot.json

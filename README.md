@@ -70,7 +70,7 @@ PYTHONPATH=. python -m demo_web.app   # 打开 http://127.0.0.1:7860
 ## 测试与评测
 
 ```bash
-PYTHONPATH=. pytest -q                      # 135 passed
+PYTHONPATH=. pytest -q                      # 137 passed
 PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P168 / F3 / SKIP2（173 条，未美化）
 ```
 
@@ -115,15 +115,28 @@ docker compose up --build
 ```
 
 > **本工程未在 Docker 内验证过**（提交机无 Docker）。评委请优先走上面的 venv 路径，
-> 该路径已在全新虚拟环境中实测：装依赖 → `135 passed`。
+> 该路径已在全新虚拟环境中实测：装依赖 → `137 passed`。
 
 ### 4) 测试
 
 ```bash
-PYTHONPATH=. pytest -q     # 135 passed
+PYTHONPATH=. pytest -q     # 137 passed
 ```
 
 与第 2 步的 Mock Bank 互不影响：测试会自行避开 8000 端口。
+
+首次解压直接跑会看到 `2 skipped`——那是两个「数字一致性守卫」在跳，
+因为 `data/evals/_metrics.json` 尚未生成。想全绿就跑一次：
+
+```bash
+PYTHONPATH=. python scripts/collect_metrics.py   # 实跑取数
+PYTHONPATH=. pytest -q                            # 这次全绿
+```
+
+> **对外材料里的所有数字由脚本统一维护**，不手写：
+> `scripts/collect_metrics.py`（实跑取数）→ `scripts/sync_metrics.py`（注入文档）
+> → `scripts/refresh_all_metrics.sh`（一条命令跑完全部并重建文档）。
+> 起因：单测数曾在 8 个文件里手写成 128/131/132/135 四种版本，每次加测试必漏。
 
 ---
 
