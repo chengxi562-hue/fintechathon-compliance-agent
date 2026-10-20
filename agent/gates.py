@@ -70,12 +70,19 @@ def classify_intent(utterance: str) -> str:
         return "transfer"
     if re.search(r"余额|账户", u):
         return "account_balance"
+    # 订阅写/查优先于账单洞察（「先别转账，帮我看看订阅」仍走 subscription_manage）
     if re.search(
-        r"订阅|代扣|月费|账单洞察|异常扣款|Netflix|网飞|奈飞|Spotify|乐刻|iCloud|退订|暂停代扣",
+        r"订阅|代扣|月费|Netflix|网飞|奈飞|Spotify|乐刻|iCloud|退订|暂停代扣",
         u,
         re.I,
     ):
         return "subscription_manage"
+    # W1 跨场景：账单/外卖/支出分析 → bill_insight（先于纯 wealth_inquire，避免 Script E 跳过账单）
+    if re.search(
+        r"账单|外卖|支出分析|花太多|这个月花了|花了多少|消费分析|账单洞察|异常扣款|餐饮周?支出",
+        u,
+    ):
+        return "bill_insight"
     if (not neg_buy) and _BUY_VERBS.search(u) and re.search(r"理财|基金|货基|债", u):
         return "wealth_purchase"
     # 「最安全/绝对安全」询安 → 走 chitchat，由话术门拦截，禁止顺带推品（S09）
@@ -173,8 +180,7 @@ def gate_intent(utterance: str, intent: str, rules: dict[str, Any]) -> GateResul
         if re.search(pat, scan):
             return GateResult("intent", False, ["INJECT_DETECTED"], {"intent": intent, "via": "indirect"})
     if intent not in g.get("allowed_intents", []):
-        reasons.append("INTENT_NOT_ALLOWED")
-        return GateResult("intent", False, reasons, {"intent": intent})
+        return GateResult("intent", False, ["INTENT_NOT_ALLOWED"], {"intent": intent})
     return GateResult("intent", True, ["INTENT_OK"], {"intent": intent})
 
 

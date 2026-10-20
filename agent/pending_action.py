@@ -12,7 +12,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Optional
 
-ActionType = Literal["change_amount", "pause_debit", "resume_debit", "cancel_sub"]
+ActionType = Literal["change_amount", "pause_debit", "resume_debit", "cancel_sub", "transfer"]
 PendingStatus = Literal["pending", "confirmed", "cancelled", "expired"]
 
 DEFAULT_TTL_SEC = 600  # 10 minutes
@@ -24,7 +24,7 @@ class PendingAction:
     session_id: str
     customer_id: str
     action: ActionType
-    target_id: str  # subscription_id
+    target_id: str  # subscription_id or transfer recipient account_id
     payload: dict[str, Any] = field(default_factory=dict)
     created_at: float = 0.0
     expires_at: float = 0.0
@@ -75,6 +75,14 @@ def get_pending(pending_id: str) -> Optional[PendingAction]:
     if pa.status == "pending" and time.time() > pa.expires_at:
         pa.status = "expired"
     return pa
+
+
+def latest_for_session(session_id: str) -> Optional[PendingAction]:
+    """Latest proposal, including terminal states: never replay an older action."""
+    for pending in reversed(list(_PENDING.values())):
+        if pending.session_id == session_id:
+            return get_pending(pending.pending_id)
+    return None
 
 
 def confirm_pending(pending_id: str, *, session_id: str) -> tuple[str, Optional[PendingAction]]:

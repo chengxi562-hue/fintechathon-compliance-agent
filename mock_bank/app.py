@@ -128,6 +128,11 @@ def create_transfer(body: TransferRequest) -> dict[str, Any]:
         }
     src["balance"] -= body.amount_cny
     src["available"] -= body.amount_cny
+    # Own-account demo transfers must preserve the customer's combined balance.
+    dst = store.ACCOUNTS.get(body.to_account_id)
+    if dst and dst["customer_id"] == body.customer_id:
+        dst["balance"] += body.amount_cny
+        dst["available"] += body.amount_cny
     tx = {
         "transfer_id": f"tx_{uuid.uuid4().hex[:12]}",
         "status": "posted",

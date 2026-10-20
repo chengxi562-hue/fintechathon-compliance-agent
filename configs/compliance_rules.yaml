@@ -12,6 +12,7 @@ gates:
       - transfer
       - account_balance
       - subscription_manage
+      - bill_insight
       - chitchat
     # If user tries to override system / jailbreak
     inject_patterns:

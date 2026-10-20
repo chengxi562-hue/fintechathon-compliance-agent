@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 import httpx
 
-from agent.gates import ComplianceVerdict, GateResult, load_rules, run_four_gates
+from agent.gates import ComplianceVerdict, GateResult, load_rules, run_four_gates, suggest_product
 from agent import pending_action as pa
 from audit.logger import AuditLogger
 from mock_bank import data as bank_seed
@@ -68,6 +68,14 @@ def _plan_for_intent(intent: str) -> list[str]:
             "list_or_propose_subscription_change",
             "pending_confirm_gate",
             "explain_and_audit",
+        ]
+    if intent == "bill_insight":
+        return [
+            "classify_intent",
+            "bill_insight",
+            "suggest_product",
+            "propose_transfer_optional",
+            "audit",
         ]
     return ["classify_intent", "run_four_compliance_gates", "respond", "audit"]
 
@@ -181,6 +189,79 @@ def _transfer_decision(utterance: str, rules: dict) -> tuple[str, str, list[str]
     )
 
 
+_CONFIRM = re.compile(r"确认|确认执行|好的确认|确认变更|确认转账")
+_CANCEL = re.compile(r"取消|取消变更|不改了|取消转账|不转了|拒绝|不确认")
+
+
+def _transfer_turn(
+    utterance: str, customer_id: str, session_id: str, rules: dict,
+) -> tuple[str, str, list[str], list[dict[str, Any]], Optional[str]]:
+    """R7 demo: freeze the proposal, then confirm into the in-process Mock Bank."""
+    from fastapi import HTTPException
+    from mock_bank.app import TransferRequest, create_transfer
+
+    tools = []
+    u = utterance.strip()
+    if _CONFIRM.fullmatch(u) or _CANCEL.fullmatch(u):
+        pend = pa.latest_for_session(session_id)
+        if pend is None or pend.action != "transfer":
+            return "block", "当前没有待确认的转账。", ["PENDING_NOT_FOUND"], tools, None
+        if pend.customer_id != customer_id:
+            return "block", "确认单不属于当前客户。", ["PENDING_CUSTOMER_MISMATCH"], tools, pend.pending_id
+        if _CANCEL.fullmatch(u):
+            code, _ = pa.cancel_pending(pend.pending_id, session_id=session_id)
+            ok = code == "PENDING_CANCELLED"
+            return "allow" if ok else "block", f"转账取消结果：{code}；未执行转账。", [code], tools, pend.pending_id
+        # Recheck the original request against current policy before consuming confirmation.
+        original = pend.payload["utterance"]
+        verdict = run_four_gates(original, _customer(customer_id), rules)
+        _, _, reasons = _transfer_decision(original, rules)
+        if not verdict.allowed or reasons != ["TRANSFER_CONFIRM_REQUIRED"]:
+            return "block", "原转账请求未通过当前合规检查，未执行。", ["TRANSFER_RECHECK_FAILED"], tools, pend.pending_id
+        dest = bank_seed.ACCOUNTS.get(pend.target_id)
+        if not dest or dest["customer_id"] != customer_id:
+            return "block", "收款账户已不属于本客户，未执行。", ["TRANSFER_RECIPIENT_MISMATCH"], tools, pend.pending_id
+        code, _ = pa.confirm_pending(pend.pending_id, session_id=session_id)
+        if code != "PENDING_CONFIRMED":
+            return "block", f"转账确认失败：{code}；未执行。", [code], tools, pend.pending_id
+        # Local simulation only; reuse the bank's independent checks, never an HTTP bank URL.
+        try:
+            data = create_transfer(TransferRequest(
+                customer_id=customer_id,
+                from_account_id=pend.payload["from_account_id"],
+                to_account_id=pend.target_id,
+                amount_cny=pend.payload["amount_cny"],
+                confirmed=True,
+                memo=f"demo pending_id={pend.pending_id}",
+            ))
+        except HTTPException as exc:
+            tools.append({"tool": "transfer_apply", "ok": False, "detail": exc.detail, "pending_id": pend.pending_id})
+            return "block", "Mock Bank 拒绝，未落账；请重新发起请求。", ["TRANSFER_BANK_REJECT"], tools, pend.pending_id
+        pend.after = dict(bank_seed.ACCOUNTS[pend.payload["from_account_id"]])
+        tools.append({"tool": "transfer_apply", "ok": True, "data": data, "pending_id": pend.pending_id})
+        return "allow", "已确认并完成 Mock Bank 演示转账（仅内存模拟），审计已记录。", ["PENDING_CONFIRMED", "TRANSFER_APPLIED"], tools, pend.pending_id
+
+    decision, response, reasons = _transfer_decision(utterance, rules)
+    tools.append({"tool": "transfer_check", "ok": decision == "allow", "amount": _parse_transfer_amount(utterance), "reasons": reasons})
+    if reasons != ["TRANSFER_CONFIRM_REQUIRED"]:
+        return decision, response, reasons, tools, None
+    # Only the existing, explicitly named own-account demo recipient is resolvable.
+    accounts = [a for a in bank_seed.ACCOUNTS.values() if a["customer_id"] == customer_id]
+    src = next((a for a in accounts if a["type"] == "demand"), None)
+    dest = next((a for a in accounts if a["type"] == "demand_backup"), None)
+    if not src or not dest or not re.search(r"(?:到|给)(?:自己|本人)?的?(?:活期)?备用金", utterance):
+        return "block", response + "尚未解析到收款账户，不能确认执行；演示仅支持本人活期备用金。", reasons + ["TRANSFER_RECIPIENT_MISSING"], tools, None
+    if len(_parse_amounts(utterance)) != 1:
+        return "block", "多笔转账不能合并为一个收款确认单，请逐笔说明。", reasons + ["TRANSFER_BATCH_UNSUPPORTED"], tools, None
+    pend = pa.create_pending(
+        session_id=session_id, customer_id=customer_id, action="transfer", target_id=dest["account_id"],
+        payload={"utterance": utterance, "amount_cny": _parse_transfer_amount(utterance), "from_account_id": src["account_id"]},
+        before=dict(src),
+    )
+    tools.append({"tool": "create_pending", "ok": True, "pending_id": pend.pending_id})
+    return "block", response + "已生成本人活期备用金转账确认单，请回复「确认」或「取消」；当前未转账。", reasons, tools, pend.pending_id
+
+
 
 def _list_subscriptions(customer_id: str) -> list[dict[str, Any]]:
     return [s for s in bank_seed.SUBSCRIPTIONS.values() if s["customer_id"] == customer_id]
@@ -232,19 +313,9 @@ def _subscription_turn(
     u = utterance.strip()
 
     # Confirm / cancel pending
-    if re.fullmatch(r"确认|确认执行|好的确认|确认变更", u) or u in {"确认", "确认执行"}:
+    if _CONFIRM.fullmatch(u):
         # Use latest pending for this session
-        latest = None
-        for p in pa._PENDING.values():  # demo: session-scoped lookup
-            if p.session_id == session_id and p.status == "pending":
-                latest = p
-                break
-        # also accept expired refresh via get
-        if latest is None:
-            for p in list(pa._PENDING.values()):
-                if p.session_id == session_id:
-                    latest = pa.get_pending(p.pending_id)
-                    break
+        latest = pa.latest_for_session(session_id)
         if latest is None:
             return "block", "当前没有待确认的订阅变更，请先说明要改哪一项。", ["PENDING_NOT_FOUND"], tools, None
         code, pend = pa.confirm_pending(latest.pending_id, session_id=session_id)
@@ -301,16 +372,12 @@ def _subscription_turn(
             pend.pending_id,
         )
 
-    if re.fullmatch(r"取消|取消变更|不改了", u):
-        latest = None
-        for p in pa._PENDING.values():
-            if p.session_id == session_id and p.status == "pending":
-                latest = p
-                break
+    if _CANCEL.fullmatch(u):
+        latest = pa.latest_for_session(session_id)
         if latest is None:
             return "block", "没有可取消的待确认变更。", ["PENDING_NOT_FOUND"], tools, None
         code, pend = pa.cancel_pending(latest.pending_id, session_id=session_id)
-        return "allow", f"已取消待确认变更（{code}）。", [code], tools, latest.pending_id
+        return "allow" if code == "PENDING_CANCELLED" else "block", f"待确认变更取消结果：{code}。", [code], tools, latest.pending_id
 
     # Write intents → PendingAction only
     sub = _find_sub_by_merchant(customer_id, utterance)
@@ -406,6 +473,80 @@ def _subscription_turn(
     )
 
 
+_TAKEOUT_KEYS = ("外卖", "美团", "饿了么", "餐饮")
+
+
+def _bill_insight_turn(
+    utterance: str,
+    customer_id: str,
+    rules: dict,
+) -> tuple[str, str, list[str], list[dict[str, Any]], Optional[str]]:
+    """W1 cross-scene: readonly bill insight + optional wealth suggest. Zero fund writes."""
+    tools: list[dict[str, Any]] = []
+    bills = _list_bills(customer_id)
+    tools.append({"tool": "list_bills", "ok": True, "count": len(bills)})
+
+    def _is_takeout(b: dict[str, Any]) -> bool:
+        if b.get("status") == "insight" or float(b.get("amount_cny") or 0) <= 0:
+            return False
+        blob = f"{b.get('merchant', '')}{b.get('note', '')}{b.get('category', '')}"
+        return any(k in blob for k in _TAKEOUT_KEYS)
+
+    takeout = [b for b in bills if _is_takeout(b)]
+    takeout_sum = sum(float(b.get("amount_cny") or 0) for b in takeout)
+    anomalies = [b for b in bills if b.get("anomaly")]
+    month_total = sum(
+        float(b.get("amount_cny") or 0)
+        for b in bills
+        if str(b.get("posted_at", "")).startswith("2026-10")
+    )
+
+    lines: list[str] = ["【账单洞察】本月相关支出摘要："]
+    if takeout:
+        lines.append(f"- 外卖/餐饮相关合计约 {takeout_sum:.0f} 元（{len(takeout)} 笔）")
+        for b in takeout[:4]:
+            lines.append(f"  · {b.get('merchant')} {float(b.get('amount_cny') or 0):.0f} 元")
+    else:
+        lines.append("- 暂无外卖类账单明细；可结合订阅与日常消费再看预算。")
+    if month_total:
+        lines.append(f"- 本月已入账账单合计约 {month_total:.0f} 元（含订阅等）")
+    if anomalies:
+        a = anomalies[0]
+        lines.append(
+            f"- 异常扣款提示：{a.get('merchant')} {float(a.get('amount_cny') or 0):.0f} 元"
+            f"（{a.get('note', '')}）"
+        )
+
+    reasons = ["BILL_INSIGHT_OK"]
+    # Soft product hint when user asks about 货基/挪钱 — no purchase/transfer write
+    if re.search(r"货基|挪|理财|基金|短债|稳健", utterance):
+        cust = _customer(customer_id)
+        pid = suggest_product(utterance, int(cust.get("risk_score", 1)), rules) or "WB_CASH_001"
+        # Prefer cash MM for Script E「挪一点去货基」
+        if re.search(r"货基", utterance):
+            pid = "WB_CASH_001"
+        prod = bank_seed.PRODUCTS.get(pid) or {}
+        tools.append({"tool": "suggest_product", "ok": True, "product_id": pid, "write": False})
+        reasons.append("PRODUCT_HINT")
+        hint = (
+            "\n【理财建议·非承诺】若希望把闲钱挪向货基，可参考目录产品"
+            f"{prod.get('name', pid)}（{pid}）：流动性 {prod.get('liquidity', '—')}，"
+            f"{prod.get('expected_yield_hint', '收益率仅供参考')}。"
+            "过往业绩不代表未来表现；理财非存款，产品有风险；本轮仅为洞察建议，"
+            "未发起申购或转账。若要划转具体金额（如「把 300 元转到备用金」），请明确金额后走确认门。"
+        )
+        lines.append(hint)
+    else:
+        lines.append("\n如需理财产品说明或划转备用金，请补充风险偏好或具体金额。")
+
+    # Hard rule: insight-only — never emit fund-write tools
+    write_tools = {"transfer_apply", "subscription_apply", "wealth_purchase_apply", "purchase_apply"}
+    assert not any(t.get("tool") in write_tools for t in tools)
+
+    return "allow", "\n".join(lines), reasons, tools, None
+
+
+
 def run_agent(
     utterance: str,
     customer_id: str = "cust_yw_001",
@@ -425,27 +566,14 @@ def run_agent(
     )
     cust = _customer(customer_id)
 
-    # Confirm/cancel short utterances reuse subscription session even if intent gate says chitchat
-    force_sub = bool(re.fullmatch(r"确认|确认执行|好的确认|确认变更|取消|取消变更|不改了", utterance.strip()))
-    if force_sub:
-        # Prefer subscription path when a pending exists for this session
-        has_pending = any(
-            p.session_id == sid and p.status in {"pending", "expired"} for p in pa._PENDING.values()
+    # Short replies follow the latest action's type; terminal actions cannot fall back to older ones.
+    short_reply = bool(_CONFIRM.fullmatch(utterance.strip()) or _CANCEL.fullmatch(utterance.strip()))
+    pending = pa.latest_for_session(sid) if short_reply else None
+    if short_reply:
+        verdict = ComplianceVerdict(
+            allowed=True, intent="transfer" if pending and pending.action == "transfer" else "subscription_manage",
+            product_id=None, reason_codes=["SESSION_CONFIRM_UTTERANCE"], response_hint="", gates=[],
         )
-        if has_pending or force_sub:
-            # Build a synthetic allowed verdict for subscription_manage
-            from agent.gates import ComplianceVerdict, GateResult
-
-            verdict = ComplianceVerdict(
-                allowed=True,
-                intent="subscription_manage",
-                product_id=None,
-                reason_codes=["SESSION_CONFIRM_UTTERANCE"],
-                response_hint="",
-                gates=[],
-            )
-        else:
-            verdict = run_four_gates(utterance, cust, rules)
     else:
         verdict = run_four_gates(utterance, cust, rules)
     state.verdict = verdict
@@ -454,7 +582,31 @@ def run_agent(
     state.plan = _plan_for_intent(verdict.intent)
     state.decision = "allow" if verdict.allowed else "block"
 
-    if verdict.intent == "subscription_manage":
+    # A new write request replaces the previous intent even when the new request is refused.
+    new_write = verdict.intent == "transfer" or (
+        verdict.intent == "subscription_manage"
+        and re.search(r"改成|改为|调整|改额|改到|设为|暂停|停止代扣|取消订阅|退订", utterance)
+    )
+    if new_write and not short_reply:
+        previous = pa.latest_for_session(sid)
+        if previous and previous.customer_id == customer_id and previous.status == "pending":
+            code, _ = pa.cancel_pending(previous.pending_id, session_id=sid)
+            state.tool_calls.append({"tool": "cancel_pending", "reason": "superseded_by_new_request", "code": code, "pending_id": previous.pending_id})
+
+    if short_reply and (pending is None or pending.customer_id != customer_id):
+        code = "PENDING_NOT_FOUND" if pending is None else "PENDING_CUSTOMER_MISMATCH"
+        state.decision = "block"
+        state.response = "当前会话没有属于本客户的确认单，未执行任何变更。"
+        verdict.allowed = False
+        verdict.reason_codes.append(code)
+        verdict.response_hint = state.response
+    elif short_reply and pending.action != "transfer" and utterance.strip() in {"确认转账", "取消转账", "不转了"}:
+        state.decision = "block"
+        state.response = "当前确认单是订阅变更，不是转账；未执行任何变更。"
+        verdict.allowed = False
+        verdict.reason_codes.append("PENDING_ACTION_MISMATCH")
+        verdict.response_hint = state.response
+    elif verdict.intent == "subscription_manage":
         # Four gates (esp. inject) still win; do not overwrite a block
         if not verdict.allowed:
             state.response = verdict.response_hint
@@ -471,28 +623,38 @@ def run_agent(
             verdict.allowed = decision == "allow"
             if decision == "block":
                 verdict.response_hint = response
+    elif verdict.intent == "bill_insight":
+        if not verdict.allowed:
+            state.response = verdict.response_hint
+            state.decision = "block"
+        else:
+            decision, response, xreasons, tools, pend_id = _bill_insight_turn(
+                utterance, customer_id, rules
+            )
+            state.decision = decision
+            state.response = response
+            state.pending_id = pend_id
+            state.tool_calls.extend(tools)
+            verdict.reason_codes = list(verdict.reason_codes) + xreasons
+            verdict.allowed = decision == "allow"
+            if decision == "block":
+                verdict.response_hint = response
     elif verdict.intent == "transfer":
         # Transfer uses extra amount/limit gate on top of four gates
         if not verdict.allowed:
             state.response = verdict.response_hint
             state.decision = "block"
         else:
-            decision, response, xreasons = _transfer_decision(utterance, rules)
+            decision, response, xreasons, tools, pend_id = _transfer_turn(utterance, customer_id, sid, rules)
             state.decision = decision
             state.response = response
+            state.pending_id = pend_id
+            state.tool_calls.extend(tools)
             verdict.reason_codes = list(verdict.reason_codes) + xreasons
             # Keep ComplianceVerdict.allowed in sync with transfer limit gate
             verdict.allowed = decision == "allow"
             if decision == "block":
                 verdict.response_hint = response
-            state.tool_calls.append(
-                {
-                    "tool": "transfer_check",
-                    "ok": decision == "allow",
-                    "amount": _parse_transfer_amount(utterance),
-                    "reasons": xreasons,
-                }
-            )
     elif verdict.allowed and verdict.product_id and verdict.intent.startswith("wealth"):
         prod = _fetch_product(mock_bank_url, verdict.product_id)
         state.tool_calls.append(
