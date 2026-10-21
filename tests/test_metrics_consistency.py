@@ -38,10 +38,10 @@ import pytest
 
 
 def _metrics_or_skip() -> dict:
-    """_metrics.json 是实跑产物、故意不入库。
+    """_metrics.json 是实跑快照，随仓库提交，克隆后守卫应当执行。
 
-    解压提交包后直接 pytest 时它不存在——这时应 skip（缺产物），
-    而不是 fail（代码错）。跑过 collect_metrics.py 后再 pytest 才做真校验。
+    快照被删掉时 skip（缺产物），而不是 fail（代码错）。
+    改过测试后应重跑 scripts/collect_metrics.py 再提交新快照。
     """
     if not METRICS.exists():
         pytest.skip("data/evals/_metrics.json 未生成；先跑 scripts/collect_metrics.py")

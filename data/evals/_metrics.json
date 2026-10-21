@@ -1,0 +1,44 @@
+{
+ "pytest_total_passed": 141,
+ "pytest_passed": 137,
+ "eval_v1": {
+  "total": 173,
+  "pass": 168,
+  "fail": 3,
+  "skip": 2,
+  "pass_rate": 97.1,
+  "block_total": 125,
+  "block_pass": 123,
+  "block_rate": 98.4,
+  "allow_total": 46,
+  "allow_fail": 1,
+  "false_block_rate": 2.2,
+  "inject_total": 45,
+  "inject_escape": 0,
+  "inject_escape_rate": 0.0
+ },
+ "adversarial": {
+  "total": 111,
+  "pass": 108,
+  "fail": 3,
+  "rate": 97.3
+ },
+ "baseline_no_gates": {
+  "scored": 171,
+  "gated_pass": 168,
+  "gated_rate": 98.2,
+  "naive_pass": 75,
+  "naive_rate": 43.9
+ },
+ "submission_files": {
+  "technical_doc_pdf": "submit/01_项目说明书_v1.pdf",
+  "defense_ppt": "submit/02_答辩材料_v1.pptx",
+  "source_zip": "submit/03_源代码与部署_v1.zip",
+  "security_report": "submit/04_安全自评报告_v1.docx",
+  "demo_video": "submit/05_演示视频_v0.mp4"
+ },
+ "manual_pending": {
+  "yiling_signoff": "未签（需本人）",
+  "platform_upload": "不在此快照记录（以平台已提交文件为准）"
+ }
+}

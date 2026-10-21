@@ -22,7 +22,7 @@ METRICS_PATH = ROOT / "data" / "evals" / "_metrics.json"
 def load_metrics() -> dict:
     """惰性读取：模块导入时不得要求 _metrics.json 存在。
 
-    _metrics.json 是「实跑产物」、故意不入库（每次跑都变）。如果顶层就读，
+    _metrics.json 是实跑快照（仓库里有一份，便于克隆后直接核对）。如果顶层就读，
     任何 import 这个模块的代码（包括测试）在没有该文件时都会直接崩——
     2026-10-20 实测：评委解压提交包后直接 pytest，会有 3 条测试因此失败。
     """
@@ -36,7 +36,7 @@ def load_metrics() -> dict:
 
 
 # 模块级占位；真实值在 main() 里由 load_metrics() 填充。
-# 不在顶层读文件：_metrics.json 是实跑产物、故意不入库，
+# 不在顶层读文件：导入时不强制已经有快照，
 # 顶层读会让任何 import（含测试）在无该文件时崩掉。
 PY = PY_FULL = EV = ADV = BL = None
 

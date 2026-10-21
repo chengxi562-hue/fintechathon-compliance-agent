@@ -107,7 +107,7 @@ add_heading("1.2 一句话结论", 2)
 add_p(
     "以「规则先行、默认拒绝、双闸兜底、可审计」为原则：Agent 侧四道门 + 授权范围门拦截注入与越权；"
     "工具层 Mock Bank 独立限额/白名单/适当性兜底；写操作经二次确认；仓库与提交包零真实密钥。"
-    "当前为 W0 底座 + W1 确认门 stub，威胁模型限于 Demo 面，不等同生产等保测评。",
+    "当前为 W1 四场景可跑 + W2 注入/编码加固（pytest 141 passed），威胁模型限于 Demo 面，不等同生产等保测评。",
     size=10.5,
 )
 add_heading("1.3 自评等级（Demo 口径）", 2)
@@ -115,7 +115,7 @@ add_table(
     ["维度", "自评", "说明"],
     [
         ["数据安全（Demo 数据）", "达标", "仅合成客户/账户；无真实 PII；审计 JSONL 本地落盘"],
-        ["权限 / 二次确认", "达标（W0）/ 推进中（W1）", "转账≥5k 待确认；订阅写操作 PendingAction stub"],
+        ["权限 / 二次确认", "达标", "转账≥5k 未确认不落账；订阅写经 PendingAction，确认后才改 Mock Bank"],
         ["注入 / 越权拦截", "基本达标", "YAML 规则 + 单测；对抗集仍有漏检由双闸兜住"],
         ["Mock Bank 双闸", "达标", "直打 API 仍拦白名单/日限/适当性；5 条专测"],
         ["密钥不入库", "达标", "无 .env；仅 .env.example；zip 已抽检"],
@@ -204,7 +204,7 @@ add_p(
     "status≠confirmed 时禁止写入 SUBSCRIPTIONS。见 agent/pending_action.py 与 docs/W1_订阅第4场景_执行提纲。"
 )
 add_bullets([
-    "本轮已落：类型 + 内存 stub（create/confirm/cancel）；确认前零银行写。",
+    "已实现 create/confirm/cancel：未确认零写入；用户确认且未过期后才写入 Mock Bank。",
     "禁止：无 PendingAction 的「便利 POST」半成品真写死。",
     "过期再确认 → PENDING_EXPIRED，不落账。",
 ])
@@ -264,7 +264,7 @@ add_bullets([
     "例：R2（cust_yw_001）申购 R4 WB_EQ_MIX_003 → 拒绝；申购 R2 WB_BOND_002 → 放行。",
 ])
 add_heading("6.3 验证", 2)
-add_p("tests/test_bank_second_gate.py 使用 TestClient 直连 bank（不经 Agent），覆盖白名单、日限、适当性正反例。W0 全量 pytest：83 passed（以本机 .venv 为准）。")
+add_p("tests/test_bank_second_gate.py 使用 TestClient 直连 bank（不经 Agent），覆盖白名单、日限、适当性正反例。全量 pytest：141 passed（以本机 .venv 为准）。")
 
 # ---- 7 密钥 ----
 add_heading("7. 密钥与供应链纪律", 1)

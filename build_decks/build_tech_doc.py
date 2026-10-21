@@ -6,7 +6,7 @@ from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
-OUT = Path(__file__).resolve().parents[1] / ("01_技术文档_v1.docx")
+OUT = Path(__file__).resolve().parents[1] / "submit" / "01_技术文档_v1.docx"
 
 doc = Document()
 # page margins
@@ -139,7 +139,7 @@ add_table(
         ["合规引擎", "agent/gates.py", "四道门 + 意图分类 + 产品解析 + 注入/授权范围检测"],
         ["状态机", "agent/graph.py", "run_agent：意图→计划→门控→工具→解释"],
         ["话术归一", "agent/normalize.py", "同音/变体禁词匹配，防「保本」绕过"],
-        ["确认门 stub", "agent/pending_action.py", "W1 订阅改额/代扣 PendingAction（未确认不落账）"],
+        ["确认门", "agent/pending_action.py", "W1 订阅改额/代扣 PendingAction（未确认不落账）"],
         ["Mock Bank", "mock_bank/", "FastAPI：客户/账户/转账/理财；第二道闸"],
         ["规则表", "configs/compliance_rules.yaml", "版本化规则（v0.1.0，27 条注入模式）"],
         ["审计", "audit/logger.py", "JSONL 追加：ts/request_id/gates/decision/…"],

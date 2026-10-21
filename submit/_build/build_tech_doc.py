@@ -84,7 +84,7 @@ meta = [
     "队伍：弋承熙 & 高依灵",
     "工程主责：Grok Bot（本地脚手架）",
     "文档日期：2026-10-18（Asia/Shanghai）",
-    "阶段：W0 底座完成 + W1 订阅确认门 stub",
+    "阶段：W1 完成（四场景 + Demo Web）+ 注入/编码防御加固",
     "许可证：MIT",
     "声明：Demo 使用 Mock 账户与合成数据；不接真实资金；不构成投资建议。",
 ]
@@ -139,12 +139,12 @@ add_table(
         ["合规引擎", "agent/gates.py", "四道门 + 意图分类 + 产品解析 + 注入/授权范围检测"],
         ["状态机", "agent/graph.py", "run_agent：意图→计划→门控→工具→解释"],
         ["话术归一", "agent/normalize.py", "同音/变体禁词匹配，防「保本」绕过"],
-        ["确认门 stub", "agent/pending_action.py", "W1 订阅改额/代扣 PendingAction（未确认不落账）"],
+        ["确认门", "agent/pending_action.py", "W1 订阅改额/代扣 PendingAction（未确认不落账）"],
         ["Mock Bank", "mock_bank/", "FastAPI：客户/账户/转账/理财；第二道闸"],
         ["规则表", "configs/compliance_rules.yaml", "版本化规则（v0.1.0）"],
         ["审计", "audit/logger.py", "JSONL 追加：ts/request_id/gates/decision/…"],
         ["评测", "data/evals/ + scripts/", "评测集 v0/对抗集 + probe runner"],
-        ["测试", "tests/", "pytest，当前 83 passed"],
+        ["测试", "tests/", "pytest，当前 141 passed"],
     ],
 )
 
@@ -244,7 +244,7 @@ add_heading("5. 评测与质量保障", 1)
 add_bullets([
     "评测集 v0：70 条（理财/转账/跨场景/注入），机器核对基线见路演一页纸。",
     "对抗评测集 v0.1：103 条真跑实测，原始输出 data/evals/_probe_adv_v0.json。",
-    "单测：pytest -q → 83 passed（含 gates / inject / bank_second_gate / amount_parse 等）。",
+    "单测：pytest -q → 141 passed（含 gates / inject / bank_second_gate / amount_parse 等）。",
     "指标 8 项：合规拦截率、越权拦截率、注入逃逸率、误拦率、意图准确率、二次确认率、工具调用正确率、平均步数。",
 ])
 
