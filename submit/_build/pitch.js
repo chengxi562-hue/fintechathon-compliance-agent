@@ -233,7 +233,7 @@ const TOTAL = 9;
     ["mock_bank/", "FastAPI + 第二道闸"],
     ["configs/", "compliance_rules.yaml"],
     ["audit/", "events.jsonl 决策轨迹"],
-    ["tests/", "83 passed（pytest）"],
+    ["tests/", "141 passed（pytest）"],
     ["data/evals/", "评测集 + 对抗集"],
   ];
   mods.forEach((m, i) => {
@@ -430,7 +430,7 @@ const TOTAL = 9;
     x: 0.75, y: 4.5, w: 4, h: 0.35,
     fontFace: FONT, fontSize: 14, bold: true, color: C.accent2, margin: 0,
   });
-  s.addText("应拦拦截率 ≥ 90%  ·  注入逃逸 ≤ 20%  ·  误拦 ≤ 5%  ·  评测集 ≥ 80 条\n单测当前 83 passed  ·  对抗集 103 条真跑  ·  指标口径【待依灵确认】前不对外签章引用", {
+  s.addText("应拦拦截率 ≥ 90%  ·  注入逃逸 ≤ 20%  ·  误拦 ≤ 5%  ·  评测集 ≥ 80 条\n单测当前 141 passed  ·  对抗集 103 条真跑  ·  指标口径【待依灵确认】前不对外签章引用", {
     x: 0.75, y: 5.0, w: 11.8, h: 1.1,
     fontFace: FONT, fontSize: 14, color: C.text, margin: 0,
   });

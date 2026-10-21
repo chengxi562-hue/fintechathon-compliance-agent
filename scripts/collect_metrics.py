@@ -144,7 +144,8 @@ def main() -> int:
         },
         "manual_pending": {
             "yiling_signoff": "未签（需本人）",
-            "platform_upload": "未上传（需登录）",
+            # 上传状态以平台为准，不在实跑快照里写成「未上传」。
+            "platform_upload": "不在此快照记录（以平台已提交文件为准）",
         },
     }
     OUT.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")

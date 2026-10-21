@@ -6,7 +6,7 @@ from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
-OUT = Path(__file__).resolve().parents[1] / ("04_安全自评报告_v1.docx")
+OUT = Path(__file__).resolve().parents[1] / "submit" / "04_安全自评报告_v1.docx"
 
 doc = Document()
 for section in doc.sections:
@@ -115,7 +115,7 @@ add_table(
     ["维度", "自评", "说明"],
     [
         ["数据安全（Demo 数据）", "达标", "仅合成客户/账户；无真实 PII；审计 JSONL 本地落盘"],
-        ["权限 / 二次确认", "达标（W0）/ 推进中（W1）", "转账≥5k 待确认；订阅写操作 PendingAction stub"],
+        ["权限 / 二次确认", "达标", "转账≥5k 未确认不落账；订阅写经 PendingAction，确认后才改 Mock Bank"],
         ["注入 / 越权拦截", "基本达标", "YAML 规则 + 单测；对抗集仍有漏检由双闸兜住"],
         ["Mock Bank 双闸", "达标", "直打 API 仍拦白名单/日限/适当性；5 条专测"],
         ["密钥不入库", "达标", "无 .env；仅 .env.example；zip 已抽检"],
@@ -204,7 +204,7 @@ add_p(
     "status≠confirmed 时禁止写入 SUBSCRIPTIONS。见 agent/pending_action.py 与 docs/W1_订阅第4场景_执行提纲。"
 )
 add_bullets([
-    "本轮已落：类型 + 内存 stub（create/confirm/cancel）；确认前零银行写。",
+    "已实现 create/confirm/cancel：未确认零写入；用户确认且未过期后才写入 Mock Bank。",
     "禁止：无 PendingAction 的「便利 POST」半成品真写死。",
     "过期再确认 → PENDING_EXPIRED，不落账。",
 ])

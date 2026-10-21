@@ -53,7 +53,7 @@ fintechathon/
 ├── audit/                      # JSONL 审计
 ├── data/audit/                 # events.jsonl（运行时生成）
 ├── scripts/demo_wealth_ask.py  # 问理财 → 拦/放行
-└── tests/                      # pytest 占位 + W0 smoke
+└── tests/                      # pytest（含合规门 / 确认门 / 代理隔离）
 ```
 
 ---
@@ -125,13 +125,8 @@ PYTHONPATH=. pytest -q     # 141 passed
 
 与第 2 步的 Mock Bank 互不影响：测试会自行避开 8000 端口。
 
-首次解压直接跑会看到 `2 skipped`——那是两个「数字一致性守卫」在跳，
-因为 `data/evals/_metrics.json` 尚未生成。想全绿就跑一次：
-
-```bash
-PYTHONPATH=. python scripts/collect_metrics.py   # 实跑取数
-PYTHONPATH=. pytest -q                            # 这次全绿
-```
+`data/evals/_metrics.json` 随仓库提交，克隆后直接 `pytest -q` 即跑完全部用例（含数字一致性守卫）。
+测试数量变化后，用 `scripts/collect_metrics.py` 重写这份快照再提交。
 
 > **对外材料里的所有数字由脚本统一维护**，不手写：
 > `scripts/collect_metrics.py`（实跑取数）→ `scripts/sync_metrics.py`（注入文档）
