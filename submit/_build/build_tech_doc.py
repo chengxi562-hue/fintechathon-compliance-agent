@@ -243,7 +243,7 @@ add_bullets([
 add_heading("5. 评测与质量保障", 1)
 add_bullets([
     "评测集 v0：70 条（理财/转账/跨场景/注入），机器核对基线见路演一页纸。",
-    "对抗评测集 v0.1：103 条真跑实测，原始输出 data/evals/_probe_adv_v0.json。",
+    "对抗评测集 v0.1：111 条真跑实测，原始输出 data/evals/_probe_adv_v0.json。",
     "单测：pytest -q → 141 passed（含 gates / inject / bank_second_gate / amount_parse 等）。",
     "指标 8 项：合规拦截率、越权拦截率、注入逃逸率、误拦率、意图准确率、二次确认率、工具调用正确率、平均步数。",
 ])
