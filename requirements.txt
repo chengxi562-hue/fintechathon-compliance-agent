@@ -8,3 +8,4 @@ pytest>=8.3.0
 # langgraph>=0.2.0
 # langchain-core>=0.3.0
 gradio>=4.44
+huggingface_hub<1.0  # pin: avoid gradio oauth 140+1fail on fresh env
