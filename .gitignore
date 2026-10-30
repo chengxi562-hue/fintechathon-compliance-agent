@@ -17,6 +17,9 @@ id_rsa*
 # Runtime artefacts
 data/audit/*.jsonl
 *.log
+# These two are committed verification logs for the metrics-collection fix.
+!artifacts/pytest_full.log
+!artifacts/eval_v1_per_row.log
 
 # Build / submit binaries
 submit/*.zip

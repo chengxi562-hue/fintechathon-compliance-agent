@@ -23,6 +23,43 @@ sys.path.insert(0, str(ROOT))
 
 OUT = ROOT / "data" / "evals" / "_metrics.json"
 
+# 答辩 PPT 文件名的唯一来源：构建脚本写到 submit/ 的那条 writeFile。
+# 不在这里再写死 v1/v2，否则 refresh 会把 _metrics.json 的指针盖回去。
+_DECK_JS = ROOT / "build_decks" / "deck.js"
+_DECK_PPT_RE = re.compile(
+    r"fileName:\s*join\(\s*__dirname\s*,\s*"
+    r'"\.\."\s*,\s*"submit"\s*,\s*"([^"]+\.pptx)"\s*\)'
+)
+
+
+def _defense_ppt_relpath() -> str:
+    text = _DECK_JS.read_text(encoding="utf-8")
+    found = _DECK_PPT_RE.findall(text)
+    if len(found) != 1:
+        raise RuntimeError(
+            "build_decks/deck.js 应恰好声明一条答辩 PPT writeFile 路径，"
+            f"实际 {found}"
+        )
+    return f"submit/{found[0]}"
+
+
+def _passed_count(r: subprocess.CompletedProcess[str]) -> int:
+    """只在 pytest 进程成功时采用「N passed」。
+
+    汇总行在失败时仍会包含通过数（例如「1 failed, 3 passed」）。
+    不看 returncode 就会把部分失败记成干净的通过数。
+    """
+    if r.returncode != 0:
+        tail = (r.stdout or "")[-800:]
+        err = (r.stderr or "")[-800:]
+        raise RuntimeError(
+            f"pytest 退出码 {r.returncode}，拒绝采用输出里的通过数。\n{tail}\n{err}"
+        )
+    m = re.search(r"(\d+) passed", r.stdout or "")
+    if not m:
+        raise RuntimeError(f"pytest 汇总行解析失败：{(r.stdout or '')[-800:]}")
+    return int(m.group(1))
+
 
 # 取数时排除守卫自身：
 # test_metrics_consistency 会读取 _metrics.json 做比对，若把它也算进总数，
@@ -48,10 +85,7 @@ def _pytest_full() -> int:
         timeout=900,
         env={"PYTHONPATH": ".", "PATH": "/usr/bin:/bin:/usr/local/bin"},
     )
-    m = re.search(r"(\d+) passed", r.stdout)
-    if not m:
-        raise RuntimeError(f"pytest 汇总行解析失败：{r.stdout[-800:]}")
-    return int(m.group(1))
+    return _passed_count(r)
 
 
 def _pytest_passed() -> int:
@@ -67,10 +101,7 @@ def _pytest_passed() -> int:
         timeout=900,
         env={"PYTHONPATH": ".", "PATH": "/usr/bin:/bin:/usr/local/bin"},
     )
-    m = re.search(r"(\d+) passed", r.stdout)
-    if not m:
-        raise RuntimeError(f"pytest 汇总行解析失败：{r.stdout[-800:]}")
-    return int(m.group(1))
+    return _passed_count(r)
 
 
 def _eval_metrics() -> dict:
@@ -137,7 +168,7 @@ def main() -> int:
         "baseline_no_gates": _baseline(),
         "submission_files": {
             "technical_doc_pdf": "submit/01_项目说明书_v1.pdf",
-            "defense_ppt": "submit/02_答辩材料_v1.pptx",
+            "defense_ppt": _defense_ppt_relpath(),
             "source_zip": "submit/03_源代码与部署_v1.zip",
             "security_report": "submit/04_安全自评报告_v1.docx",
             "demo_video": "submit/05_演示视频_v0.mp4",
