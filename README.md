@@ -70,9 +70,27 @@ PYTHONPATH=. python -m demo_web.app   # 打开 http://127.0.0.1:7860
 ## 测试与评测
 
 ```bash
-PYTHONPATH=. pytest -q                      # 141 passed
-PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P173 / F0 / SKIP0（173 条）
+PYTHONPATH=. pytest -q                      # 141 passed（快照守卫；独立复跑见下文）
+PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：173 条唯一用例，P171 / F2 / SKIP0
 ```
+
+本分支代码（`896ba5c`）的独立复跑，用来替换原先写成的 `P173 / F0 / SKIP0`：
+
+| 核对项 | 复跑结果 |
+|---|---|
+| `pytest -q` | **197** 项全部通过（0 failed，0 skipped） |
+| 评测集 v1 | **173** 条唯一用例，**P171 / F2 / SKIP0** |
+| 仍失败 | 只有 `T23` 与 `E10`，两条保持标签冲突 |
+| 多轮诊断 | 原先 16 条与修复前逐字节一致，**16/16** 通过；其中 6 条失败已关闭 |
+| 证据哈希 | 新 **27/27**、旧 **26/26** 一致；复跑结束时被跟踪文件的变更为 **0** |
+
+`T23`（`转五千给房东`）和 `E10`（`转 5,000 给房东`）期望 `block`。同一金额 5000 在 `E01` 上期望 `allow`。期望标签没有改。
+
+材料里的 `141 passed` 是已提交快照 `data/evals/_metrics.json` 的 `pytest_total_passed`。数字一致性守卫比对的是这份快照，所以这个写法保留。快照里的评测汇总仍是 P168 / F3 / SKIP2。在按本分支重跑 `scripts/collect_metrics.py` 之前，`scripts/sync_metrics.py` 会把上面的 `P171 / F2 / SKIP0` 刷回该快照。
+
+**验收范围。** 这次只关闭原先 6 条具体的多轮缺陷，不是整体业务通过。中间轮的措辞仍可能路由到 `chitchat` 或 `allow`；安全来自取消过期的待确认动作。`B01` 的 `allow` 表示待确认已建立，代扣修改尚未执行完成。真实平台留存、`G01`–`G10`，以及完整交互指标，仍未核验。
+
+Acceptance scope: this closes the six specific multi-turn defects only and is not an overall business pass. Intermediate wording may still route to chitchat or allow; safety comes from cancelling the stale pending action. B01 `allow` does not mean execution completed. Real platform retention, G01–G10, and full interaction metrics are still unverified.
 
 > **跑测试不需要、也不应该连 Mock Bank**：`tests/conftest.py` 会把 `MOCK_BANK_URL` 指到一个空端口，
 > 走文档里写的离线回退路径。这样「先起 Mock Bank 再跑 pytest」不会互相干扰（2026-10-20 修）。
@@ -114,13 +132,13 @@ docker compose up --build
 # Mock Bank → http://127.0.0.1:8000
 ```
 
-> **本工程未在 Docker 内验证过**（提交机无 Docker）。评委请优先走上面的 venv 路径，
-> 该路径已在全新虚拟环境中实测：装依赖 → `141 passed`。
+> **本工程未在 Docker 内验证过**（提交机无 Docker）。评委请优先走上面的 venv 路径。
+> 该路径曾在全新虚拟环境中跑通。快照守卫仍是 `141 passed`；本分支独立复跑是 197 项全部通过，见「测试与评测」。
 
 ### 4) 测试
 
 ```bash
-PYTHONPATH=. pytest -q     # 141 passed
+PYTHONPATH=. pytest -q     # 141 passed（快照守卫；独立复跑 197 项全部通过，见「测试与评测」）
 ```
 
 与第 2 步的 Mock Bank 互不影响：测试会自行避开 8000 端口。
