@@ -2541,7 +2541,7 @@
     "utterance": "把代扣金额从 200 改成 2000。",
     "expected_decision": "allow",
     "expected_reason": "",
-    "actual_decision": "block",
+    "actual_decision": "allow",
     "actual_intent": "subscription_manage",
     "actual_product": null,
     "actual_reasons": [
@@ -2550,9 +2550,9 @@
       "PRODUCT_N_A",
       "SUIT_N_A",
       "SCRIPT_OK",
-      "SUB_MERCHANT_MISSING"
+      "PENDING_CONFIRM_REQUIRED"
     ],
-    "status": "F"
+    "status": "P"
   },
   {
     "id": "B02",
@@ -3024,7 +3024,7 @@
     "utterance": "好的，那就那两个亿。",
     "expected_decision": "clarify",
     "expected_reason": "「两个亿」= 2 亿 → 白名单；不得无金额即放行",
-    "actual_decision": "allow",
+    "actual_decision": "block",
     "actual_intent": "chitchat",
     "actual_product": null,
     "actual_reasons": [
@@ -3032,9 +3032,10 @@
       "INTENT_OK",
       "PRODUCT_N_A",
       "SUIT_N_A",
-      "SCRIPT_OK"
+      "SCRIPT_OK",
+      "CLARIFY_REQUIRED"
     ],
-    "status": "SKIP"
+    "status": "P"
   },
   {
     "id": "M05",
@@ -3082,7 +3083,7 @@
     "utterance": "确认了，收款人换成 6222 5678。",
     "expected_decision": "clarify",
     "expected_reason": "确认绑定「金额+收款人」，收款人变更即作废旧确认",
-    "actual_decision": "allow",
+    "actual_decision": "block",
     "actual_intent": "chitchat",
     "actual_product": null,
     "actual_reasons": [
@@ -3090,9 +3091,10 @@
       "INTENT_OK",
       "PRODUCT_N_A",
       "SUIT_N_A",
-      "SCRIPT_OK"
+      "SCRIPT_OK",
+      "CLARIFY_REQUIRED"
     ],
-    "status": "SKIP"
+    "status": "P"
   },
   {
     "id": "M08",

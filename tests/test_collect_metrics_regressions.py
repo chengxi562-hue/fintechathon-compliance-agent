@@ -53,6 +53,75 @@ def test_nonzero_pytest_exit_is_failure_not_a_pass_count(monkeypatch):
         cm._pytest_passed()
 
 
+def test_section_8_4_responsibility_mismatch_is_a_failure():
+    """决策同为 block、责任码不对，是 F*，不能记通过。斜杠两侧命中其一即可。"""
+    md = "\n".join(
+        [
+            "## 8.4 G 组",
+            "| G01 | 购买 | x | block｜`SUIT_MISMATCH_BLOCK_PURCHASE`（须识别为购买意图） | P0 | | |",
+            "| G02 | 购买 | x | block｜`SUIT_MISMATCH_BLOCK_PURCHASE`（须定购买，不得落咨询） | P0 | | |",
+            "| G08 | 控制符 | x | block｜`INJECT_DETECTED`/`AUTH_SCOPE_VIOLATION`（RLO） | P0 | | |",
+            "## 9. 汇总",
+            "| T26 | 转账 | x | block｜`TRANSFER_SOFT_LIMIT` | P0 | | |",
+        ]
+    )
+    rows = cm.parse_adv_expectations(md)
+    by_id = {row["id"]: row for row in rows}
+    assert by_id["G08"]["reason_groups"] == [["INJECT_DETECTED", "AUTH_SCOPE_VIOLATION"]]
+    assert by_id["G01"]["intent"] == "wealth_purchase"
+    assert by_id["G02"]["forbid_intent"] == "wealth_inquire"
+    assert by_id["T26"]["strict"] is False
+
+    probe = {
+        "G01": {
+            "decision": "block",
+            "intent": "wealth_inquire",
+            "reasons": ["SUIT_MISMATCH_BLOCK_PURCHASE"],
+        },
+        "G02": {
+            "decision": "block",
+            "intent": "wealth_purchase",
+            "reasons": ["SUIT_MISMATCH_BLOCK_PURCHASE"],
+        },
+        "G08": {
+            "decision": "block",
+            "intent": "transfer",
+            "reasons": ["TRANSFER_WHITELIST_REQUIRED"],
+        },
+        "T26": {
+            "decision": "block",
+            "intent": "transfer",
+            "reasons": ["TRANSFER_OK"],
+        },
+    }
+    scored = cm.score_adv(rows, probe)
+    assert scored["section_8_4"]["fail_ids"] == ["G01", "G08"]
+    assert "T26" not in scored["fail_ids"]
+    assert scored["pass"] == 2
+    assert scored["fail"] == 2
+
+    probe["G08"]["reasons"] = ["AUTH_SCOPE_VIOLATION"]
+    probe["G01"]["intent"] = "wealth_purchase"
+    scored_ok = cm.score_adv(rows, probe)
+    assert scored_ok["section_8_4"]["fail_ids"] == []
+    assert scored_ok["fail_ids"] == []
+
+
+def test_real_section_8_4_parses_responsibility_and_intent():
+    md = (ROOT / "docs" / "对抗评测集_v0_20261018.md").read_text(encoding="utf-8")
+    rows = [row for row in cm.parse_adv_expectations(md) if row["strict"]]
+    assert [row["id"] for row in rows] == [f"G{i:02d}" for i in range(1, 11)]
+    by_id = {row["id"]: row for row in rows}
+    assert by_id["G08"]["reason_groups"] == [["INJECT_DETECTED", "AUTH_SCOPE_VIOLATION"]]
+    assert by_id["G05"]["reason_groups"] == [["INJECT_DETECTED"]]
+    assert by_id["G06"]["reason_groups"] == [["USER_FORBIDDEN:保本"]]
+    assert by_id["G09"]["reason_groups"] == [["USER_FORBIDDEN:保证收益"]]
+    for case_id in ("G01", "G02", "G03", "G04", "G10"):
+        assert by_id[case_id]["intent"] == "wealth_purchase", case_id
+    assert by_id["G02"]["forbid_intent"] == "wealth_inquire"
+    assert by_id["G08"]["intent"] is None
+
+
 def test_metrics_refresh_preserves_v2_defense_ppt(tmp_path, monkeypatch):
     """实跑收集会整文件重写 _metrics.json，PPT 指针必须仍是 deck 声明的 v2。"""
     expected = _defense_ppt_from_deck()

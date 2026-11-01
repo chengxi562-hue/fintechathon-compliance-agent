@@ -105,6 +105,37 @@ def confirm_pending(pending_id: str, *, session_id: str) -> tuple[str, Optional[
     return "PENDING_CONFIRMED", pa
 
 
+def bind_pending_merchant(
+    pending_id: str,
+    *,
+    session_id: str,
+    target_id: str,
+    merchant: str,
+    before: Optional[dict[str, Any]] = None,
+) -> tuple[str, Optional[PendingAction]]:
+    """Attach an explicitly named merchant to an unresolved debit change.
+
+    Does not post, and does not pick a merchant the user did not name.
+    """
+    pa = get_pending(pending_id)
+    if pa is None:
+        return "PENDING_NOT_FOUND", None
+    if pa.session_id != session_id:
+        return "PENDING_SESSION_MISMATCH", pa
+    if pa.status != "pending":
+        return f"PENDING_NOT_PENDING:{pa.status}", pa
+    if pa.action != "change_amount":
+        return "PENDING_ACTION_MISMATCH", pa
+    if pa.target_id and not pa.payload.get("unresolved_merchant"):
+        return "PENDING_ALREADY_BOUND", pa
+    pa.target_id = target_id
+    pa.payload["merchant"] = merchant
+    pa.payload["unresolved_merchant"] = False
+    if before is not None:
+        pa.before = before
+    return "PENDING_MERCHANT_BOUND", pa
+
+
 def cancel_pending(pending_id: str, *, session_id: str) -> tuple[str, Optional[PendingAction]]:
     pa = get_pending(pending_id)
     if pa is None:

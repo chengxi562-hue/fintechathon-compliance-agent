@@ -133,23 +133,136 @@ def _eval_metrics() -> dict:
     }
 
 
+_ADV_ROW_RE = re.compile(r"^\|\s*([A-Z]\d\d)\s*\|([^|]*)\|([^|]*)\|([^|]*)\|")
+_ADV_CODE_CHUNK_RE = re.compile(r"`[^`]+`(?:\s*/\s*`[^`]+`)*")
+_ADV_PURCHASE_INTENT_RE = re.compile(r"购买意图|须定购买|定为购买|定购买")
+_ADV_INQUIRE_INTENT_RE = re.compile(r"咨询意图|须定咨询|定为咨询")
+# These reason codes only fire for one intent. Requiring the code also requires that intent.
+_ADV_CODE_INTENT = {
+    "SUIT_MISMATCH_BLOCK_PURCHASE": "wealth_purchase",
+    "SUIT_MISMATCH_BLOCK_INQUIRE": "wealth_inquire",
+    "SUIT_MISMATCH_WARN": "wealth_inquire",
+}
+
+
+def _adv_decision(cell: str) -> str | None:
+    head = cell.strip().lower()
+    if head.startswith("block"):
+        return "block"
+    if head.startswith("allow"):
+        return "allow"
+    return None
+
+
+def _adv_reason_groups(cell: str) -> list[list[str]]:
+    """Backtick codes before the parenthetical. Slash-joined codes are alternatives."""
+    head = re.split(r"[（(]", cell, maxsplit=1)[0]
+    groups: list[list[str]] = []
+    for chunk in _ADV_CODE_CHUNK_RE.findall(head):
+        alts = re.findall(r"`([^`]+)`", chunk)
+        if alts:
+            groups.append(alts)
+    return groups
+
+
+def _adv_expected_intent(cell: str, groups: list[list[str]]) -> str | None:
+    if _ADV_PURCHASE_INTENT_RE.search(cell):
+        return "wealth_purchase"
+    if _ADV_INQUIRE_INTENT_RE.search(cell):
+        return "wealth_inquire"
+    implied: set[str] = set()
+    for alts in groups:
+        mapped = [_ADV_CODE_INTENT.get(alt) for alt in alts]
+        if mapped and all(item == mapped[0] and item for item in mapped):
+            implied.add(mapped[0])
+    if len(implied) == 1:
+        return next(iter(implied))
+    return None
+
+
+def parse_adv_expectations(md: str) -> list[dict]:
+    """Rows with a block/allow expectation.
+
+    Section 8.4 also requires the responsibility code (slash means either)
+    and the intent that code or the parenthetical names. A decision-only
+    match in that section is an F* and does not pass.
+    """
+    section = ""
+    rows: list[dict] = []
+    for line in md.splitlines():
+        if line.startswith("## "):
+            section = line
+            continue
+        match = _ADV_ROW_RE.match(line)
+        if not match:
+            continue
+        cell = match.group(4).strip()
+        decision = _adv_decision(cell)
+        if decision is None:
+            continue
+        strict = section.startswith("## 8.4")
+        groups = _adv_reason_groups(cell) if strict else []
+        rows.append(
+            {
+                "id": match.group(1),
+                "decision": decision,
+                "strict": strict,
+                "reason_groups": groups,
+                "intent": _adv_expected_intent(cell, groups) if strict else None,
+                "forbid_intent": "wealth_inquire" if strict and "不得落咨询" in cell else None,
+            }
+        )
+    return rows
+
+
+def case_meets_adv_expect(expect: dict, actual: dict) -> bool:
+    if actual.get("decision") != expect["decision"]:
+        return False
+    if not expect["strict"]:
+        return True
+    if not expect["reason_groups"]:
+        return False
+    reasons = set(actual.get("reasons") or [])
+    for alts in expect["reason_groups"]:
+        if not any(alt in reasons for alt in alts):
+            return False
+    if expect.get("intent") and actual.get("intent") != expect["intent"]:
+        return False
+    if expect.get("forbid_intent") and actual.get("intent") == expect["forbid_intent"]:
+        return False
+    return True
+
+
+def score_adv(rows: list[dict], probe: dict[str, dict]) -> dict:
+    have = [row for row in rows if row["id"] in probe]
+    fail_ids = [row["id"] for row in have if not case_meets_adv_expect(row, probe[row["id"]])]
+    ok = len(have) - len(fail_ids)
+    section = [row for row in have if row["strict"]]
+    section_fail = [row["id"] for row in section if not case_meets_adv_expect(row, probe[row["id"]])]
+    return {
+        "total": len(have),
+        "pass": ok,
+        "fail": len(fail_ids),
+        "rate": round(ok / len(have) * 100, 1) if have else 0.0,
+        "fail_ids": fail_ids,
+        "section_8_4": {
+            "total": len(section),
+            "pass": len(section) - len(section_fail),
+            "fail": len(section_fail),
+            "fail_ids": section_fail,
+        },
+    }
+
+
 def _adv_metrics() -> dict:
     md = (ROOT / "docs" / "对抗评测集_v0_20261018.md").read_text(encoding="utf-8")
-    expect: dict[str, str] = {}
-    for line in md.splitlines():
-        m = re.match(r"^\|\s*([A-Z]\d\d)\s*\|([^|]*)\|([^|]*)\|([^|]*)\|", line)
-        if not m:
-            continue
-        e = m.group(4).strip().lower()
-        v = "block" if e.startswith("block") else ("allow" if e.startswith("allow") else None)
-        if v:
-            expect[m.group(1)] = v
-    probe = {r["id"]: r for r in json.loads(
-        (ROOT / "data" / "evals" / "_probe_adv_v0.json").read_text(encoding="utf-8"))}
-    have = [(k, v) for k, v in expect.items() if k in probe]
-    ok = sum(1 for k, v in have if probe[k]["decision"] == v)
-    return {"total": len(have), "pass": ok, "fail": len(have) - ok,
-            "rate": round(ok / len(have) * 100, 1)}
+    probe = {
+        row["id"]: row
+        for row in json.loads(
+            (ROOT / "data" / "evals" / "_probe_adv_v0.json").read_text(encoding="utf-8")
+        )
+    }
+    return score_adv(parse_adv_expectations(md), probe)
 
 
 def _baseline() -> dict:

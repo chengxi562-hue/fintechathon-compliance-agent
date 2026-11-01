@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import yaml
 
-from agent.normalize import del33t, match_script_violations, normalize_text
+from agent.normalize import decode_payloads, del33t, match_script_violations, normalize_text
 
 
 
@@ -201,6 +201,19 @@ def gate_auth_scope(utterance: str, customer: dict[str, Any], rules: dict[str, A
 
 _INJECT_QUOTED_NEGATION = re.compile(r"(不要|别|无需|不用|禁止)执行?「[^」]*」")
 
+# Trojan-Source directional controls: embedding, override, PDF, and isolates.
+# They are stripped before phrase matching, so the phrase scan never sees them.
+# Their presence (raw, or restored from %XX / &#..; / \uXXXX) is itself the injection.
+_BIDI_OVERRIDE = re.compile("[\u202a-\u202e\u2066-\u2069]")
+
+
+def _has_directional_override(utterance: str) -> bool:
+    """True when the utterance carries a bidi override, including encoded forms."""
+    if _BIDI_OVERRIDE.search(utterance):
+        return True
+    decoded = decode_payloads(utterance)
+    return decoded != utterance and bool(_BIDI_OVERRIDE.search(decoded))
+
 
 _NEG_PREFIX = re.compile(r"(不要|别|不用|无需|不|禁止|莫|勿)\s*$")
 
@@ -220,6 +233,14 @@ def _inject_scan_text(utterance: str) -> str:
 
 def gate_intent(utterance: str, intent: str, rules: dict[str, Any]) -> GateResult:
     g = rules["gates"]["intent"]
+    # 方向控制符会在归一化时被删掉，短语表看不到。先按「有没有这层伪装」判注入。
+    if _has_directional_override(utterance):
+        return GateResult(
+            "intent",
+            False,
+            ["INJECT_DETECTED"],
+            {"intent": intent, "via": "bidi_override"},
+        )
     # 扫描两遍：原文 + 解码归一文本（HTML 实体 / URL / \\uXXXX / base64 / 零宽 / 空格拆词）。
     # 编码绕过族（C01/C03/C05/C06/C07/C09）靠这一步覆盖，而不是为每种编码各写一条正则。
     scans = [_inject_scan_text(utterance), _inject_scan_text(normalize_text(utterance))]
@@ -283,6 +304,15 @@ def gate_clarify(utterance: str, rules: dict[str, Any]) -> Optional[GateResult]:
     覆盖评测集 X07（房贷怎么还划算）/ W19（全部身家）/ M05（VIP 施压）等：
     这类问法没有明确产品、金额或授权依据，直接放行等于默许执行。
     """
+    # 承接上文的大额，但本句没有新的转账/购买动词：不得当成已经授权的执行。
+    # 「好的，那就那两个亿。」金额在句内，动作不在；无待确认单时只能澄清。
+    if (
+        not _TRANSFER_VERBS.search(utterance)
+        and not _BUY_VERBS.search(utterance)
+        and re.search(r"(那就|就按|就照)(那|这|刚才)", utterance)
+        and re.search(r"[亿万]", utterance)
+    ):
+        return GateResult("clarify", False, ["CLARIFY_REQUIRED"], {"pattern": "anaphoric-amount"})
     pats = rules.get("clarify", {}).get("ambiguous_patterns", [])
     norm = normalize_text(utterance)
     for pat in pats:
@@ -370,10 +400,16 @@ def run_four_gates(
         elif "AUTH_SCOPE_VIOLATION" in reason_codes:
             hint = "仅可办理本人名下业务；客服/亲属自述不构成授权，已拦截。"
         elif "CLARIFY_REQUIRED" in reason_codes:
-            hint = (
-                "这个问法还不够明确，我不直接给结论或执行动作。"
-                "请说明具体产品（目录内）、金额与用途，我再按四道合规门处理。"
-            )
+            if g5 is not None and g5.details.get("pattern") == "anaphoric-amount":
+                hint = (
+                    "这句是在承接上文的金额，当前没有可执行的待确认单，所以不会放行。"
+                    "请把动作、金额和收款账户说全；「亿/万」一级的金额不能靠一句「那就那个数」执行。"
+                )
+            else:
+                hint = (
+                    "这个问法还不够明确，我不直接给结论或执行动作。"
+                    "请说明具体产品（目录内）、金额与用途，我再按四道合规门处理。"
+                )
         elif "PRODUCT_NOT_IN_CATALOG" in reason_codes:
             hint = "您提到的产品不在我行产品目录内，无法介绍或办理；请以官方目录为准。"
         else:

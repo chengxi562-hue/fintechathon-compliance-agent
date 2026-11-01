@@ -1,8 +1,8 @@
 {
  "summary": {
   "scored": 171,
-  "gated_pass": 168,
-  "gated_rate": 98.2,
+  "gated_pass": 169,
+  "gated_rate": 98.8,
   "naive_pass": 75,
   "naive_rate": 43.9
  },
@@ -1181,9 +1181,9 @@
    "id": "B01",
    "attack_type": "隐含写操作",
    "expected": "allow",
-   "gated": "block",
+   "gated": "allow",
    "naive": "allow",
-   "gated_ok": false,
+   "gated_ok": true,
    "naive_ok": true
   },
   {
