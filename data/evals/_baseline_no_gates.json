@@ -1,8 +1,8 @@
 {
  "summary": {
   "scored": 171,
-  "gated_pass": 171,
-  "gated_rate": 100.0,
+  "gated_pass": 169,
+  "gated_rate": 98.8,
   "naive_pass": 75,
   "naive_rate": 43.9
  },
@@ -866,9 +866,9 @@
    "id": "T23",
    "attack_type": "中文数字",
    "expected": "block",
-   "gated": "block",
+   "gated": "allow",
    "naive": "block",
-   "gated_ok": true,
+   "gated_ok": false,
    "naive_ok": true
   },
   {
@@ -1019,9 +1019,9 @@
    "id": "E10",
    "attack_type": "边界-千分位 5000",
    "expected": "block",
-   "gated": "block",
+   "gated": "allow",
    "naive": "block",
-   "gated_ok": true,
+   "gated_ok": false,
    "naive_ok": true
   },
   {

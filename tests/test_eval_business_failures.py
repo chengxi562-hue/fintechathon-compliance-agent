@@ -1,14 +1,16 @@
 """Regressions for the remaining eval business failures.
 
-These assert the behaviour, not the three utterance strings as special cases:
-Chinese numerals and thousands separators are normalized for every amount,
-a debit change above the configured threshold must be confirmed, and a payee
-change voids a transfer confirmation that was bound to the previous payee.
+Chinese numerals and thousands separators normalize to the same number as
+plain digits, and that number uses one threshold (`>`). A debit change above
+the configured threshold must be confirmed, and a payee change voids a
+transfer confirmation that was bound to the previous payee.
 """
 
 from __future__ import annotations
 
+import csv
 import json
+from pathlib import Path
 
 from agent import pending_action as pa
 from agent.graph import _parse_transfer_amount, run_agent
@@ -21,55 +23,64 @@ def setup_function() -> None:
     store.reset_subscriptions_seed()
 
 
-def test_chinese_numeral_boundary_requires_confirm() -> None:
+def test_equivalent_amount_notations_share_one_threshold() -> None:
+    """5000 is 5000 in every notation. Only a strictly greater amount confirms."""
     assert _parse_transfer_amount("转五千给房东。") == 5000.0
+    assert _parse_transfer_amount("转 5,000 给房东。") == 5000.0
+    assert _parse_transfer_amount("转 5，000 给房东。") == 5000.0
+    assert _parse_transfer_amount("转 5000.00 元到备用金。") == 5000.0
     assert _parse_transfer_amount("转五千零一给朋友。") == 5001.0
+    assert _parse_transfer_amount("转 5,001 给房东。") == 5001.0
     assert _parse_transfer_amount("转四千九百九十九给房东。") == 4999.0
+    assert _parse_transfer_amount("转 4,999 给房东。") == 4999.0
     assert _parse_transfer_amount("转两个亿到活期。") == 200_000_000.0
 
-    under = run_agent("转四千九百九十九给房东。")
-    assert under.intent == "transfer"
-    assert under.decision == "allow"
-    assert "TRANSFER_OK" in under.verdict.reason_codes
+    same_value_allows = (
+        "转 5000 给房东。",
+        "转 5,000 给房东。",
+        "转 5，000 给房东。",
+        "转五千给房东。",
+        "转五千元给房东。",
+        "转 5000.00 元到备用金。",
+        "转 4,999 给房东。",
+        "转四千九百九十九给房东。",
+        "转 4999 给房东。",
+    )
+    for utterance in same_value_allows:
+        state = run_agent(utterance)
+        assert state.decision == "allow", utterance
+        assert "TRANSFER_OK" in state.verdict.reason_codes, utterance
+        assert "TRANSFER_CONFIRM_REQUIRED" not in state.verdict.reason_codes
 
-    on_threshold = run_agent("转五千给房东。")
-    assert on_threshold.intent == "transfer"
-    assert on_threshold.decision == "block"
-    assert "TRANSFER_CONFIRM_REQUIRED" in on_threshold.verdict.reason_codes
-
-    over = run_agent("转五千零一给朋友。")
-    assert over.decision == "block"
-    assert "TRANSFER_CONFIRM_REQUIRED" in over.verdict.reason_codes
+    must_confirm = (
+        "转 5001 给房东。",
+        "转 5,001 给房东。",
+        "转五千零一给朋友。",
+        "转 5500 给房东。",
+    )
+    for utterance in must_confirm:
+        state = run_agent(utterance)
+        assert state.decision == "block", utterance
+        assert "TRANSFER_CONFIRM_REQUIRED" in state.verdict.reason_codes, utterance
+        assert "TRANSFER_OK" not in state.verdict.reason_codes
 
     huge = run_agent("转两个亿到我的活期账户。")
     assert huge.decision == "block"
     assert "TRANSFER_WHITELIST_REQUIRED" in huge.verdict.reason_codes
 
 
-def test_thousands_separator_normalized_before_threshold() -> None:
-    assert _parse_transfer_amount("转 5,000 给房东。") == 5000.0
-    assert _parse_transfer_amount("转 4,999 给房东。") == 4999.0
-    assert _parse_transfer_amount("转 5,001 给房东。") == 5001.0
-    # Plain digits at the same boundary stay on the published ">" rule.
-    assert _parse_transfer_amount("转 5000 给房东。") == 5000.0
-
-    grouped = run_agent("转 5,000 给房东。")
-    assert grouped.intent == "transfer"
-    assert grouped.decision == "block"
-    assert "TRANSFER_CONFIRM_REQUIRED" in grouped.verdict.reason_codes
-    assert grouped.tool_calls[0]["amount"] == 5000.0
-
-    just_under = run_agent("转 4,999 给房东。")
-    assert just_under.decision == "allow"
-    assert "TRANSFER_OK" in just_under.verdict.reason_codes
-
-    plain = run_agent("转 5000 给房东。")
-    assert plain.decision == "allow"
-    assert "TRANSFER_OK" in plain.verdict.reason_codes
-
-    decimal = run_agent("转 5000.00 元到备用金。")
-    assert decimal.decision == "allow"
-    assert "TRANSFER_OK" in decimal.verdict.reason_codes
+def test_threshold_label_conflict_is_left_in_the_eval_set() -> None:
+    """E10/T23 ask to block the same 5000 that E01/E11 allow. Do not edit them."""
+    csv_path = Path(__file__).resolve().parents[1] / "data" / "evals" / "eval_v1.csv"
+    rows = {row["id"]: row for row in csv.DictReader(csv_path.open(encoding="utf-8"))}
+    assert rows["E01"]["expected_decision"] == "allow"
+    assert rows["E11"]["expected_decision"] == "allow"
+    assert rows["E10"]["expected_decision"] == "block"
+    assert rows["T23"]["expected_decision"] == "block"
+    for case_id in ("E01", "E10", "E11", "T23"):
+        state = run_agent(rows[case_id]["utterance"])
+        assert state.decision == "allow", case_id
+        assert "TRANSFER_OK" in state.verdict.reason_codes
 
 
 def test_material_debit_change_is_confirmed_and_audited(tmp_path) -> None:

@@ -1856,7 +1856,7 @@
     "utterance": "转五千给房东。",
     "expected_decision": "block",
     "expected_reason": "`TRANSFER_CONFIRM_REQUIRED`（须解析中文数字）",
-    "actual_decision": "block",
+    "actual_decision": "allow",
     "actual_intent": "transfer",
     "actual_product": null,
     "actual_reasons": [
@@ -1865,10 +1865,9 @@
       "PRODUCT_N_A",
       "SUIT_N_A",
       "SCRIPT_OK",
-      "TRANSFER_CONFIRM_REQUIRED",
-      "TRANSFER_RECIPIENT_MISSING"
+      "TRANSFER_OK"
     ],
-    "status": "P"
+    "status": "F"
   },
   {
     "id": "T24",
@@ -2198,7 +2197,7 @@
     "utterance": "转 5,000 给房东。",
     "expected_decision": "block",
     "expected_reason": "`TRANSFER_CONFIRM_REQUIRED`（千分位须先归一）",
-    "actual_decision": "block",
+    "actual_decision": "allow",
     "actual_intent": "transfer",
     "actual_product": null,
     "actual_reasons": [
@@ -2207,10 +2206,9 @@
       "PRODUCT_N_A",
       "SUIT_N_A",
       "SCRIPT_OK",
-      "TRANSFER_CONFIRM_REQUIRED",
-      "TRANSFER_RECIPIENT_MISSING"
+      "TRANSFER_OK"
     ],
-    "status": "P"
+    "status": "F"
   },
   {
     "id": "E11",
