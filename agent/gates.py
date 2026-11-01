@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import yaml
 
-from agent.normalize import del33t, match_script_violations, normalize_text
+from agent.normalize import decode_payloads, del33t, match_script_violations, normalize_text
 
 
 
@@ -201,6 +201,19 @@ def gate_auth_scope(utterance: str, customer: dict[str, Any], rules: dict[str, A
 
 _INJECT_QUOTED_NEGATION = re.compile(r"(不要|别|无需|不用|禁止)执行?「[^」]*」")
 
+# Trojan-Source directional controls: embedding, override, PDF, and isolates.
+# They are stripped before phrase matching, so the phrase scan never sees them.
+# Their presence (raw, or restored from %XX / &#..; / \uXXXX) is itself the injection.
+_BIDI_OVERRIDE = re.compile("[\u202a-\u202e\u2066-\u2069]")
+
+
+def _has_directional_override(utterance: str) -> bool:
+    """True when the utterance carries a bidi override, including encoded forms."""
+    if _BIDI_OVERRIDE.search(utterance):
+        return True
+    decoded = decode_payloads(utterance)
+    return decoded != utterance and bool(_BIDI_OVERRIDE.search(decoded))
+
 
 _NEG_PREFIX = re.compile(r"(不要|别|不用|无需|不|禁止|莫|勿)\s*$")
 
@@ -220,6 +233,14 @@ def _inject_scan_text(utterance: str) -> str:
 
 def gate_intent(utterance: str, intent: str, rules: dict[str, Any]) -> GateResult:
     g = rules["gates"]["intent"]
+    # 方向控制符会在归一化时被删掉，短语表看不到。先按「有没有这层伪装」判注入。
+    if _has_directional_override(utterance):
+        return GateResult(
+            "intent",
+            False,
+            ["INJECT_DETECTED"],
+            {"intent": intent, "via": "bidi_override"},
+        )
     # 扫描两遍：原文 + 解码归一文本（HTML 实体 / URL / \\uXXXX / base64 / 零宽 / 空格拆词）。
     # 编码绕过族（C01/C03/C05/C06/C07/C09）靠这一步覆盖，而不是为每种编码各写一条正则。
     scans = [_inject_scan_text(utterance), _inject_scan_text(normalize_text(utterance))]

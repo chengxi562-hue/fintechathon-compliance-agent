@@ -159,13 +159,76 @@ _UNIT_MULT = {
 }
 
 
+# Identifier spans are not money. Blank only those digits before amount parsing.
+_FORMAT_CHARS = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]")
+_PHONE_NUMBER = re.compile(
+    r"(?<!\d)(?:\+?86[\s\-]?)?1[3-9]\d(?:[\s\-]?\d){8}(?!\d)"
+)
+_LANDLINE = re.compile(r"(?<!\d)0\d{2,3}[\s\-]\d{7,8}(?!\d)")
+_HOTLINE = re.compile(r"(?<!\d)(?:400|800)[\s\-]\d{3}[\s\-]\d{4}(?!\d)")
+_LONG_CARD = re.compile(rf"(?<!\d)\d{{16,19}}(?!\d)(?!\s*(?:{_AMOUNT_UNIT}))")
+# Two or more groups starting with a UnionPay BIN, or a full 4×4 card display.
+# A currency unit on the last group keeps it as money («6222 元»).
+_GROUPED_CARD = re.compile(
+    rf"(?<!\d)(?:62\d{{2}}(?:[\s\-]\d{{4}}){{1,4}}|\d{{4}}(?:[\s\-]\d{{4}}){{3}})"
+    rf"(?!\d)(?!\s*(?:{_AMOUNT_UNIT}))"
+)
+_LABELED_ID = re.compile(
+    r"(?:手机号码|手机号|电话号码|联系电话|银行卡号|卡号|账号|帐号|尾号)"
+    r"(?:\s*(?:换成|改为|改成|改到|是|为))?"
+    r"\s*[:：]?\s*"
+    r"\d(?:[\d\s\-]*\d)?"
+)
+_PAYEE_ID = re.compile(
+    r"(?:收款人|收款方|收款对象|收款账户|收款账号|收款帐号)"
+    r".{0,24}?"
+    r"(?:换成|改为|改成|改到)"
+    r"\s*"
+    r"(?:\d{3,4}(?:[\s\-]\d{3,4})+|\d{4,19})"
+)
+_DEST_ACCOUNT = re.compile(
+    r"(?:到|至|(?<![A-Za-z])to(?![A-Za-z]))\s+"
+    r"(?:62\d{2,17}(?:[\s\-]\d{4})*|\d{4}(?:[\s\-]\d{4})+)"
+    rf"(?!\s*(?:{_AMOUNT_UNIT}))",
+    re.I,
+)
+_ID_PATTERNS = (
+    _PHONE_NUMBER,
+    _LANDLINE,
+    _HOTLINE,
+    _LONG_CARD,
+    _GROUPED_CARD,
+    _LABELED_ID,
+    _PAYEE_ID,
+    _DEST_ACCOUNT,
+)
+
+
+def _mask_identifier_numbers(utterance: str) -> str:
+    """Remove phone, card, and account digits so they are not summed as 金额.
+
+    A later 转/金额 token stays. Currency-marked numbers such as 「6222 元」
+    are not account fragments and are left for the amount parser.
+    """
+    text = _FORMAT_CHARS.sub(" ", utterance)
+    chars = list(text)
+    for pattern in _ID_PATTERNS:
+        for match in pattern.finditer(text):
+            for index in range(match.start(), match.end()):
+                if chars[index].isdigit():
+                    chars[index] = " "
+    return "".join(chars)
+
+
 def _parse_amount_tokens(utterance: str) -> list[float]:
     """Extract amounts. Grouped digits are read first so "5,000" is 5000, not 5.
 
     Thousands separators and Chinese numerals are normalized to the same number
     a plain literal would be. Callers compare that number once; notation does
-    not choose a different threshold.
+    not choose a different threshold. Phone and account numbers are removed
+    first so a payee fragment cannot change the threshold.
     """
+    utterance = _mask_identifier_numbers(utterance)
     tokens: list[float] = []
 
     def _flush(m: re.Match[str]) -> str:

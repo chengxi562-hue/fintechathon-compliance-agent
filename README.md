@@ -74,23 +74,24 @@ PYTHONPATH=. pytest -q                      # 141 passed（快照守卫；独立
 PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：173 条唯一用例，P171 / F2 / SKIP0
 ```
 
-本分支代码（`896ba5c`）的独立复跑，用来替换原先写成的 `P173 / F0 / SKIP0`：
+本分支的独立复跑，用来替换原先写成的 `P173 / F0 / SKIP0`：
 
 | 核对项 | 复跑结果 |
 |---|---|
-| `pytest -q` | **197** 项全部通过（0 failed，0 skipped） |
+| `pytest -q` | **209** 项全部通过（0 failed，0 skipped） |
 | 评测集 v1 | **173** 条唯一用例，**P171 / F2 / SKIP0** |
 | 仍失败 | 只有 `T23` 与 `E10`，两条保持标签冲突 |
-| 多轮诊断 | 原先 16 条与修复前逐字节一致，**16/16** 通过；其中 6 条失败已关闭 |
-| 证据哈希 | 新 **27/27**、旧 **26/26** 一致；复跑结束时被跟踪文件的变更为 **0** |
+| 多轮诊断 | 先前闭合的 16 项所在模块 `tests/test_multiturn_pending.py` 本次 **46** 项全部通过，无回归 |
+| G01–G10 | 按 §8.4 的责任门和意图，**10/10**，检测退出码 0。同一口径在修复前是 **9/10**，只失败 G08（F*） |
+| 对抗探针 | 刷新后 **109/111**。未通过只有 `T23`、`E10`。这不是完整 8 项指标通过 |
 
 `T23`（`转五千给房东`）和 `E10`（`转 5,000 给房东`）期望 `block`。同一金额 5000 在 `E01` 上期望 `allow`。期望标签没有改。
 
-材料里的 `141 passed` 是已提交快照 `data/evals/_metrics.json` 的 `pytest_total_passed`。数字一致性守卫比对的是这份快照，所以这个写法保留。快照里的评测汇总仍是 P168 / F3 / SKIP2。在按本分支重跑 `scripts/collect_metrics.py` 之前，`scripts/sync_metrics.py` 会把上面的 `P171 / F2 / SKIP0` 刷回该快照。
+材料里的 `141 passed` 是已提交快照 `data/evals/_metrics.json` 的 `pytest_total_passed`。数字一致性守卫比对的是这份快照，所以这个写法保留。快照里的评测汇总仍是 P168 / F3 / SKIP2，对抗汇总仍是 108/111（旧探针把 B01 记成 block，且 G08 只按 decision 算通过）。没有重跑 `scripts/collect_metrics.py`，因此 `scripts/sync_metrics.py` 也不会把上面的独立复跑数字写进 `submit/`。
 
-**验收范围。** 这次只关闭原先 6 条具体的多轮缺陷，不是整体业务通过。中间轮的措辞仍可能路由到 `chitchat` 或 `allow`；安全来自取消过期的待确认动作。`B01` 的 `allow` 表示待确认已建立，代扣修改尚未执行完成。真实平台留存、`G01`–`G10`，以及完整交互指标，仍未核验。
+**验收范围。** G01–G10 按 §8.4 是 10/10，只说明这一组的责任门和意图。完整 8 项指标的定义仍未确认，不能据此写成整体通过。评测集仍是 P171 / F2 / SKIP0。多轮回归没有退回。`B01` 的 `allow` 表示待确认已建立，代扣修改尚未执行完成。真实平台留存仍未在本次复跑里核验。
 
-Acceptance scope: this closes the six specific multi-turn defects only and is not an overall business pass. Intermediate wording may still route to chitchat or allow; safety comes from cancelling the stale pending action. B01 `allow` does not mean execution completed. Real platform retention, G01–G10, and full interaction metrics are still unverified.
+Acceptance scope: G01–G10 are 10/10 under section 8.4 responsibility codes and intent. That is not an overall pass; the full eight metrics are still undefined. Eval remains P171 / F2 / SKIP0. The multi-turn regression module did not regress. B01 `allow` means a pending change was recorded, not that the debit was posted. Real platform retention was not re-checked.
 
 > **跑测试不需要、也不应该连 Mock Bank**：`tests/conftest.py` 会把 `MOCK_BANK_URL` 指到一个空端口，
 > 走文档里写的离线回退路径。这样「先起 Mock Bank 再跑 pytest」不会互相干扰（2026-10-20 修）。
@@ -133,12 +134,12 @@ docker compose up --build
 ```
 
 > **本工程未在 Docker 内验证过**（提交机无 Docker）。评委请优先走上面的 venv 路径。
-> 该路径曾在全新虚拟环境中跑通。快照守卫仍是 `141 passed`；本分支独立复跑是 197 项全部通过，见「测试与评测」。
+> 该路径曾在全新虚拟环境中跑通。快照守卫仍是 `141 passed`；本分支独立复跑是 209 项全部通过，见「测试与评测」。
 
 ### 4) 测试
 
 ```bash
-PYTHONPATH=. pytest -q     # 141 passed（快照守卫；独立复跑 197 项全部通过，见「测试与评测」）
+PYTHONPATH=. pytest -q     # 141 passed（快照守卫；独立复跑 209 项全部通过，见「测试与评测」）
 ```
 
 与第 2 步的 Mock Bank 互不影响：测试会自行避开 8000 端口。
