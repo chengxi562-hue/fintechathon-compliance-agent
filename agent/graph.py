@@ -114,7 +114,10 @@ _CN_UNITS = {"十": 10, "百": 100, "千": 1000}
 
 
 def _cn_num(seg: str) -> float | None:
-    """Parse a Chinese-numeral segment like 五千 / 三万五 / 十二. Returns None if no CN numerals."""
+    """Parse a Chinese-numeral segment like 五千 / 三万五 / 十二 / 两个亿.
+
+    Returns None if no CN numerals. 「个」is a measure word (两个亿) and is skipped.
+    """
     if not seg or not any(c in _CN_DIGITS or c in _CN_UNITS for c in seg):
         return None
     total, cur = 0, 0
@@ -131,37 +134,71 @@ def _cn_num(seg: str) -> float | None:
         elif ch == "亿":
             total = (total + cur) * 100000000
             cur = 0
+        elif ch == "个":
+            continue
         else:
             return None
     return float(total + cur)
 
 
-def _parse_amounts(utterance: str) -> list[float]:
-    """Extract all transfer amounts (CNY) with unit normalization.
+_AMOUNT_UNIT = r"个亿元|个亿|亿元|亿|个万元|万元|个万|万|千元|千|元|块钱|块"
+_UNIT_MULT = {
+    "个亿元": 1e8,
+    "个亿": 1e8,
+    "亿元": 1e8,
+    "亿": 1e8,
+    "个万元": 1e4,
+    "万元": 1e4,
+    "个万": 1e4,
+    "万": 1e4,
+    "千元": 1e3,
+    "千": 1e3,
+    "元": 1.0,
+    "块钱": 1.0,
+    "块": 1.0,
+}
 
-    Handles 万/万元/亿/千 multipliers, thousands separators (25,000),
-    Chinese numerals (五千 / 三万五千), and negative numbers (kept signed so the
-    caller can reject <= 0 as TRANSFER_AMOUNT_INVALID).
+
+def _parse_amount_tokens(utterance: str) -> list[tuple[float, bool]]:
+    """Extract (amount, notation_normalized) pairs.
+
+    notation_normalized is true when the token was not a plain arabic literal:
+    thousands separators (5,000 / 5，000) are removed before the number is read,
+    and Chinese numerals (五千 / 两个亿) are converted. Callers that sit on a
+    policy boundary use this flag so a repaired notation cannot auto-execute.
     """
-    u = re.sub(r"(?<=\d)[,，](?=\d{3})", "", utterance)  # strip thousands separators
-    amounts: list[float] = []
+    tokens: list[tuple[float, bool]] = []
 
-    def _flush(m: re.Match[str]) -> str:
-        num = float(m.group(1))
-        unit = m.group(2) or ""
-        mult = {"亿": 1e8, "万元": 1e4, "万": 1e4, "千": 1e3}.get(unit, 1.0)
-        amounts.append(num * mult)
-        return " "
+    def _take(normalized: bool):
+        def _flush(m: re.Match[str]) -> str:
+            unit = m.group(2) or ""
+            raw = m.group(1).replace(",", "").replace("，", "")
+            tokens.append((float(raw) * _UNIT_MULT.get(unit, 1.0), normalized))
+            return " "
 
-    # Arabic numerals with optional unit; negative allowed (validated later)
-    u = re.sub(r"(-?\d+(?:\.\d+)?)\s*(亿元|亿|万元|万|千元|千|元|块|块钱)?", _flush, u)
-    # Chinese numerals with optional 万/亿 big units
-    cn_pat = r"([零一二两三四五六七八九十百千万亿]+)"
+        return _flush
+
+    # Grouped digits first, so "5,000" is 5000 and not 5.
+    grouped = rf"(-?\d{{1,3}}(?:[,，]\d{{3}})+(?:\.\d+)?)\s*({_AMOUNT_UNIT})?"
+    u = re.sub(grouped, _take(True), utterance)
+    plain = rf"(-?\d+(?:\.\d+)?)\s*({_AMOUNT_UNIT})?"
+    u = re.sub(plain, _take(False), u)
+    cn_pat = r"([零一二两三四五六七八九十百千万亿个]+)"
     for m in re.finditer(cn_pat, u):
         v = _cn_num(m.group(1))
         if v is not None:
-            amounts.append(v)
-    return amounts
+            tokens.append((v, True))
+    return tokens
+
+
+def _parse_amounts(utterance: str) -> list[float]:
+    """Extract all transfer amounts (CNY) with unit normalization.
+
+    Handles 万/万元/亿/千 multipliers, thousands separators (25,000 / 5,000),
+    Chinese numerals (五千 / 三万五千 / 两个亿), and negative numbers (kept
+    signed so the caller can reject <= 0 as TRANSFER_AMOUNT_INVALID).
+    """
+    return [value for value, _normalized in _parse_amount_tokens(utterance)]
 
 
 def _parse_transfer_amount(utterance: str) -> float | None:
@@ -178,10 +215,13 @@ def _transfer_decision(utterance: str, rules: dict) -> tuple[str, str, list[str]
     soft = float(cfg.get("daily_soft_limit_cny", 20000))
     confirm_above = float(cfg.get("require_confirm_above_cny", 5000))
     whitelist_above = float(cfg.get("whitelist_only_above_cny", 50000))
-    amount = _parse_transfer_amount(utterance)
+    tokens = _parse_amount_tokens(utterance)
+    amounts = [value for value, _normalized in tokens]
+    notation_normalized = any(flag for _value, flag in tokens)
+    amount = sum(amounts) if amounts else None
     reasons: list[str] = []
-    n_amounts = len(_parse_amounts(utterance))
-    count_note = f"（共 {n_amounts} 笔，合计 {amount:.0f} 元）" if n_amounts > 1 else ""
+    n_amounts = len(amounts)
+    count_note = f"（共 {n_amounts} 笔，合计 {amount:.0f} 元）" if n_amounts > 1 and amount is not None else ""
     if amount is None:
         return "block", "请说明转账金额（例如：把 100 元转到自己活期备用金）。", ["TRANSFER_AMOUNT_MISSING"]
     if amount <= 0:
@@ -192,9 +232,10 @@ def _transfer_decision(utterance: str, rules: dict) -> tuple[str, str, list[str]
     if amount > soft:
         reasons.append("TRANSFER_SOFT_LIMIT")
         return "block", f"金额 {amount:.0f} 元超过日软限额 {soft:.0f} 元，已拦截。", reasons
-    # 阈值语义：恰好等于 require_confirm_above 时放行（strictly greater requires confirm）。
-    # Mock Bank 侧已同步改成同一比较符，避免「Agent 说可以、银行说要确认」的分歧。
-    if amount > confirm_above:
+    # 明文阿拉伯数字：恰好等于阈值放行（amount > confirm_above 才确认），与 Mock Bank 一致。
+    # 千分位和中文数字要先归一。归一后刚好落在阈值上仍需确认，避免修复「5,000 → 5」
+    # 这类截断之后，边界金额被当成普通 5000 直接放行。
+    if amount > confirm_above or (notation_normalized and amount >= confirm_above):
         reasons.append("TRANSFER_CONFIRM_REQUIRED")
         return "block", f"金额 {amount:.0f} 元{count_note}需二次确认后才能执行（阈值 {confirm_above:.0f} 元）。", reasons
     # Internal backup heuristic
@@ -330,6 +371,83 @@ def _parse_sub_new_amount(utterance: str) -> float | None:
     return amounts[0] if amounts else None
 
 
+_FROM_TO_CHANGE = r"改成|改为|调整为|改到|调成|变成"
+
+
+def _parse_from_to(utterance: str) -> tuple[float | None, float | None]:
+    """Parse 「从 200 改成 2000」 / 「从两百改成两千」. Missing side stays None."""
+    m = re.search(
+        rf"从\s*(\d+(?:\.\d+)?)\s*(?:元|块)?\s*(?:{_FROM_TO_CHANGE})\s*(\d+(?:\.\d+)?)",
+        utterance,
+    )
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    m = re.search(
+        rf"从\s*([零一二两三四五六七八九十百千万亿个]+)\s*(?:元|块)?\s*(?:{_FROM_TO_CHANGE})\s*([零一二两三四五六七八九十百千万亿个]+)",
+        utterance,
+    )
+    if m:
+        old, new = _cn_num(m.group(1)), _cn_num(m.group(2))
+        if old is not None and new is not None:
+            return old, new
+    return None, None
+
+
+def _subscription_confirm_above() -> float:
+    cfg = load_rules().get("subscription") or {}
+    return float(cfg.get("require_confirm_above_cny", 1000))
+
+
+def _sub_change_needs_confirm(old: float | None, new: float) -> bool:
+    """A debit change strictly above the configured threshold must be confirmed."""
+    limit = _subscription_confirm_above()
+    if new > limit:
+        return True
+    if old is not None and abs(new - old) > limit:
+        return True
+    return False
+
+
+def _unique_sub_by_amount(customer_id: str, amount: float) -> dict[str, Any] | None:
+    hits = [
+        s for s in _list_subscriptions(customer_id)
+        if abs(float(s.get("amount_cny") or 0) - amount) < 0.01
+    ]
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
+_PAYEE_REBIND = re.compile(
+    r"(收款人|收款账户|收款帐号|账号|帐号|卡号).{0,16}(换成|改成|改为|改到)"
+    r"|(换成|改成|改为).{0,12}(收款人|收款账户|账号|帐号|卡号)"
+)
+
+
+def _release_transfer_if_payee_changes(
+    utterance: str, customer_id: str, session_id: str,
+) -> tuple[bool, list[dict[str, Any]]]:
+    """Confirmation is bound to amount + payee. A payee change voids that confirmation."""
+    tools: list[dict[str, Any]] = []
+    if not _PAYEE_REBIND.search(utterance):
+        return False, tools
+    pend = pa.latest_for_session(session_id)
+    if (
+        pend is not None
+        and pend.status == "pending"
+        and pend.action == "transfer"
+        and pend.customer_id == customer_id
+    ):
+        code, _ = pa.cancel_pending(pend.pending_id, session_id=session_id)
+        tools.append({
+            "tool": "cancel_pending",
+            "reason": "payee_changed",
+            "code": code,
+            "pending_id": pend.pending_id,
+        })
+    return True, tools
+
+
 def _subscription_turn(
     utterance: str,
     customer_id: str,
@@ -349,6 +467,14 @@ def _subscription_turn(
         latest = pa.latest_for_session(session_id)
         if latest is None:
             return "block", "当前没有待确认的订阅变更，请先说明要改哪一项。", ["PENDING_NOT_FOUND"], tools, None
+        if latest.action == "change_amount" and latest.target_id not in bank_seed.SUBSCRIPTIONS:
+            return (
+                "block",
+                "待确认的代扣改额还没有绑定商家，未改动。请说明要改哪一个订阅后再确认。",
+                ["SUB_MERCHANT_MISSING"],
+                tools,
+                latest.pending_id,
+            )
         code, pend = pa.confirm_pending(latest.pending_id, session_id=session_id)
         if code != "PENDING_CONFIRMED" or pend is None:
             return "block", f"确认失败：{code}。订阅未改动。", [code], tools, latest.pending_id
@@ -411,13 +537,55 @@ def _subscription_turn(
 
     # Write intents → PendingAction only
     sub = _find_sub_by_merchant(customer_id, utterance)
-    if re.search(r"改成|改为|调整|改额|改到|设为", utterance) and (
+    if re.search(r"改成|改为|调整|改额|改到|设为|变成", utterance) and (
         re.search(r"订阅|代扣|月费|Netflix|网飞|Spotify|乐刻|iCloud", utterance, re.I)
         or sub
     ):
+        old_amt, parsed_new = _parse_from_to(utterance)
+        if sub is None and old_amt is not None:
+            sub = _unique_sub_by_amount(customer_id, old_amt)
+        new_amt = parsed_new if parsed_new is not None else _parse_sub_new_amount(utterance)
         if sub is None:
+            # Material change with no merchant: do not guess a subscription.
+            # Record a confirmation and leave every debit amount untouched.
+            if new_amt is not None and _sub_change_needs_confirm(old_amt, new_amt):
+                before_amounts = {
+                    s["subscription_id"]: s["amount_cny"] for s in _list_subscriptions(customer_id)
+                }
+                pend = pa.create_pending(
+                    session_id=session_id,
+                    customer_id=customer_id,
+                    action="change_amount",
+                    target_id="",
+                    payload={
+                        "new_amount_cny": new_amt,
+                        "old_amount_cny": old_amt,
+                        "merchant": None,
+                        "unresolved_merchant": True,
+                    },
+                    before={"subscriptions": before_amounts},
+                )
+                tools.append({
+                    "tool": "create_pending",
+                    "ok": True,
+                    "pending_id": pend.pending_id,
+                    "merchant": None,
+                })
+                shown_old = f"{old_amt:.0f}→" if old_amt is not None else ""
+                return (
+                    "allow",
+                    (
+                        f"代扣改额 {shown_old}{new_amt:.0f} 元已超过 "
+                        f"{_subscription_confirm_above():.0f} 元确认阈值，已记入待确认，"
+                        "但还没有绑定商家，因此不会落账。"
+                        "请补充商家（如 Netflix / 乐刻）后回复「确认」或「取消」。"
+                        f"（pending_id={pend.pending_id}）"
+                    ),
+                    ["PENDING_CONFIRM_REQUIRED"],
+                    tools,
+                    pend.pending_id,
+                )
             return "block", "请说明要改哪一个订阅商家（如 Netflix / Spotify / 乐刻）。", ["SUB_MERCHANT_MISSING"], tools, None
-        new_amt = _parse_sub_new_amount(utterance)
         if new_amt is None:
             return "block", "请说明新的月费金额（例如：把 Netflix 月费改成 30）。", ["SUB_AMOUNT_MISSING"], tools, None
         before = {k: sub[k] for k in ("amount_cny", "status", "debit_enabled", "next_debit_date")}
@@ -658,6 +826,13 @@ def run_agent(
             code, _ = pa.cancel_pending(previous.pending_id, session_id=sid)
             state.tool_calls.append({"tool": "cancel_pending", "reason": "superseded_by_new_request", "code": code, "pending_id": previous.pending_id})
 
+    payee_changed, payee_tools = _release_transfer_if_payee_changes(utterance, customer_id, sid)
+    if payee_tools:
+        state.tool_calls.extend(payee_tools)
+    # A new transfer that already names an amount is a fresh order, not a reuse of the old confirmation.
+    new_transfer_order = verdict.intent == "transfer" and _parse_transfer_amount(utterance) is not None
+    payee_clarify = payee_changed and verdict.allowed and not new_transfer_order
+
     if short_reply and (pending is None or pending.customer_id != customer_id):
         code = "PENDING_NOT_FOUND" if pending is None else "PENDING_CUSTOMER_MISMATCH"
         state.decision = "block"
@@ -670,6 +845,15 @@ def run_agent(
         state.response = "当前确认单是订阅变更，不是转账；未执行任何变更。"
         verdict.allowed = False
         verdict.reason_codes.append("PENDING_ACTION_MISMATCH")
+        verdict.response_hint = state.response
+    elif payee_clarify:
+        state.decision = "block"
+        state.response = (
+            "确认只对当时的金额和收款人有效。收款人一变，原确认就作废，我不会按新收款人执行。"
+            "请重新说明金额和收款账户。"
+        )
+        verdict.allowed = False
+        verdict.reason_codes = list(verdict.reason_codes) + ["CLARIFY_REQUIRED"]
         verdict.response_hint = state.response
     elif verdict.intent == "subscription_manage":
         # Four gates (esp. inject) still win; do not overwrite a block

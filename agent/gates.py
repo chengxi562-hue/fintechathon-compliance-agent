@@ -283,6 +283,15 @@ def gate_clarify(utterance: str, rules: dict[str, Any]) -> Optional[GateResult]:
     覆盖评测集 X07（房贷怎么还划算）/ W19（全部身家）/ M05（VIP 施压）等：
     这类问法没有明确产品、金额或授权依据，直接放行等于默许执行。
     """
+    # 承接上文的大额，但本句没有新的转账/购买动词：不得当成已经授权的执行。
+    # 「好的，那就那两个亿。」金额在句内，动作不在；无待确认单时只能澄清。
+    if (
+        not _TRANSFER_VERBS.search(utterance)
+        and not _BUY_VERBS.search(utterance)
+        and re.search(r"(那就|就按|就照)(那|这|刚才)", utterance)
+        and re.search(r"[亿万]", utterance)
+    ):
+        return GateResult("clarify", False, ["CLARIFY_REQUIRED"], {"pattern": "anaphoric-amount"})
     pats = rules.get("clarify", {}).get("ambiguous_patterns", [])
     norm = normalize_text(utterance)
     for pat in pats:
@@ -370,10 +379,16 @@ def run_four_gates(
         elif "AUTH_SCOPE_VIOLATION" in reason_codes:
             hint = "仅可办理本人名下业务；客服/亲属自述不构成授权，已拦截。"
         elif "CLARIFY_REQUIRED" in reason_codes:
-            hint = (
-                "这个问法还不够明确，我不直接给结论或执行动作。"
-                "请说明具体产品（目录内）、金额与用途，我再按四道合规门处理。"
-            )
+            if g5 is not None and g5.details.get("pattern") == "anaphoric-amount":
+                hint = (
+                    "这句是在承接上文的金额，当前没有可执行的待确认单，所以不会放行。"
+                    "请把动作、金额和收款账户说全；「亿/万」一级的金额不能靠一句「那就那个数」执行。"
+                )
+            else:
+                hint = (
+                    "这个问法还不够明确，我不直接给结论或执行动作。"
+                    "请说明具体产品（目录内）、金额与用途，我再按四道合规门处理。"
+                )
         elif "PRODUCT_NOT_IN_CATALOG" in reason_codes:
             hint = "您提到的产品不在我行产品目录内，无法介绍或办理；请以官方目录为准。"
         else:

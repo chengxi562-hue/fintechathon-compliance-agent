@@ -135,6 +135,10 @@ transfer:
   require_confirm_above_cny: 5000
   whitelist_only_above_cny: 50000
 
+subscription:
+  # 代扣改额：新金额或变动绝对值大于该值时必须走确认门。未点名商家也不猜测落账。
+  require_confirm_above_cny: 1000
+
 audit:
   jsonl_path: data/audit/events.jsonl
   fields:

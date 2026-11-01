@@ -71,7 +71,7 @@ PYTHONPATH=. python -m demo_web.app   # 打开 http://127.0.0.1:7860
 
 ```bash
 PYTHONPATH=. pytest -q                      # 141 passed
-PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P168 / F3 / SKIP2（173 条，未美化）
+PYTHONPATH=. python scripts/run_eval_v1.py  # 评测集 v1：P173 / F0 / SKIP0（173 条）
 ```
 
 > **跑测试不需要、也不应该连 Mock Bank**：`tests/conftest.py` 会把 `MOCK_BANK_URL` 指到一个空端口，
